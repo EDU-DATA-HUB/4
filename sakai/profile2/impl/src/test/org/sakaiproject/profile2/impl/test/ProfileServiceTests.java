@@ -1,0 +1,455 @@
+/*
+ * Copyright (c) 2003-2021 The Apereo Foundation
+ *
+ * Licensed under the Educational Community License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *             http://opensource.org/licenses/ecl2
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.sakaiproject.profile2.impl.test;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.sakaiproject.api.common.edu.person.SakaiPerson;
+import org.sakaiproject.api.common.edu.person.SakaiPersonManager;
+import org.sakaiproject.authz.api.SecurityService;
+import org.sakaiproject.component.api.ServerConfigurationService;
+import org.sakaiproject.content.api.ContentHostingService;
+import org.sakaiproject.profile2.api.ProfileConstants;
+import org.sakaiproject.profile2.api.ProfileImage;
+import org.sakaiproject.profile2.api.ProfileService;
+import org.sakaiproject.profile2.api.ProfileTransferBean;
+import org.sakaiproject.profile2.api.model.ProfileImageUploaded;
+import org.sakaiproject.profile2.api.repository.ProfileImageUploadedRepository;
+import org.sakaiproject.profile2.api.repository.SocialNetworkingInfoRepository;
+import org.sakaiproject.tool.api.SessionManager;
+import org.sakaiproject.user.api.PreferencesService;
+import org.sakaiproject.user.api.User;
+import org.sakaiproject.user.api.UserDirectoryService;
+import org.sakaiproject.user.api.UserEdit;
+import org.sakaiproject.user.api.UserNotDefinedException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit4.AbstractTransactionalJUnit4SpringContextTests;
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@RunWith(SpringJUnit4ClassRunner.class)
+@ContextConfiguration(classes = { ProfileServiceTestConfiguration.class })
+public class ProfileServiceTests extends AbstractTransactionalJUnit4SpringContextTests {
+
+    @Autowired private ProfileService profileService;
+    @Autowired private ContentHostingService contentHostingService;
+    @Autowired private SakaiPersonManager sakaiPersonManager;
+    @Autowired private SecurityService securityService;
+    @Autowired private SessionManager sessionManager;
+    @Autowired private ProfileImageUploadedRepository profileImageUploadedRepository;
+    @Autowired private SocialNetworkingInfoRepository socialNetworkingInfoRepository;
+    @Autowired private UserDirectoryService userDirectoryService;
+    @Autowired private PreferencesService preferencesService;
+    @Autowired private ServerConfigurationService serverConfigurationService;
+
+    private String user1Id = UUID.randomUUID().toString();
+    private String user2Id = UUID.randomUUID().toString();
+    private String site1Id = UUID.randomUUID().toString();
+    private User user1;
+
+    @Before
+    public void setup() {
+
+      reset(userDirectoryService);
+      reset(securityService);
+      reset(sessionManager);
+      reset(contentHostingService);
+      reset(preferencesService);
+      reset(serverConfigurationService);
+
+      user1 = mock(User.class);
+      when(user1.getCreatedBy()).thenReturn(user1);
+      when(user1.getModifiedBy()).thenReturn(user1);
+      when(user1.getId()).thenReturn(user1Id);
+      when(user1.getDisplayName()).thenReturn("User 1");
+      when(user1.getEmail()).thenReturn("user1@mailinator.com");
+      when(user1.getFirstName()).thenReturn("User");
+      when(user1.getLastName()).thenReturn("1");
+      when(user1.getEid()).thenReturn("user1");
+    }
+
+    @Test
+    public void assertCanModifyProfileRejectsNonOwner() {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user2Id);
+
+        Exception exception = assertThrows(SecurityException.class, () -> profileService.assertCanModifyProfile(user1Id));
+        assertEquals("Not allowed to modify this profile.", exception.getMessage());
+    }
+
+    @Test
+    public void setProfileImageRequiresLoggedInUser() {
+
+        Exception exception = assertThrows(SecurityException.class, () -> profileService.setProfileImage(user1Id, new byte[0], "image/png", "image.png"));
+        assertEquals("You must be logged in to update a user's profile image.", exception.getMessage());
+    }
+
+    @Test
+    public void setProfileImageRejectsNonOwner() {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user2Id);
+
+        Exception exception = assertThrows(SecurityException.class, () -> profileService.setProfileImage(user1Id, new byte[0], "image/png", "image.png"));
+        assertEquals("Not allowed to update a user's profile image.", exception.getMessage());
+    }
+
+    @Test
+    public void saveUserProfileRequiresLoggedInUser() {
+
+        ProfileTransferBean profileBean = new ProfileTransferBean();
+        profileBean.id = user1Id;
+
+        Exception exception = assertThrows(SecurityException.class, () -> profileService.saveUserProfile(profileBean));
+        assertEquals("You must be logged in to update a user's profile.", exception.getMessage());
+    }
+
+    @Test
+    public void saveUserProfileRejectsNonOwner() {
+
+        ProfileTransferBean profileBean = new ProfileTransferBean();
+        profileBean.id = user1Id;
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user2Id);
+
+        Exception exception = assertThrows(SecurityException.class, () -> profileService.saveUserProfile(profileBean));
+        assertEquals("Not allowed to update a user's profile.", exception.getMessage());
+    }
+
+    @Test
+    public void removeProfileImageRequiresLoggedInUser() {
+
+        Exception exception = assertThrows(SecurityException.class, () -> profileService.removeProfileImage(user1Id));
+        assertEquals("You must be logged in to remove a user's profile image.", exception.getMessage());
+    }
+
+    @Test
+    public void removeProfileImageRejectsNonOwner() {
+
+        profileImageUploadedRepository.save(new ProfileImageUploaded(user1Id, "/main", "/thumb", "/avatar"));
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user2Id);
+
+        Exception exception = assertThrows(SecurityException.class, () -> profileService.removeProfileImage(user1Id));
+
+        assertEquals("Not allowed to remove a user's profile image.", exception.getMessage());
+        assertTrue(profileImageUploadedRepository.findById(user1Id).isPresent());
+    }
+
+    @Test
+    public void removeProfileImageAllowsSuperUser() {
+
+        profileImageUploadedRepository.save(new ProfileImageUploaded(user1Id, "/main", "/thumb", "/avatar"));
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user2Id);
+        when(securityService.isSuperUser()).thenReturn(true);
+
+        assertTrue(profileService.removeProfileImage(user1Id));
+        assertFalse(profileImageUploadedRepository.findById(user1Id).isPresent());
+    }
+
+    @Test
+    public void removePronunciationRecordingRequiresLoggedInUser() throws Exception {
+
+        Exception exception = assertThrows(SecurityException.class, () -> profileService.removePronunciationRecording(user1Id));
+
+        assertEquals("You must be logged in to remove a user's pronunciation recording.", exception.getMessage());
+        verify(contentHostingService, never()).removeResource(anyString());
+    }
+
+    @Test
+    public void removePronunciationRecordingRejectsNonOwner() throws Exception {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user2Id);
+
+        Exception exception = assertThrows(SecurityException.class, () -> profileService.removePronunciationRecording(user1Id));
+
+        assertEquals("Not allowed to remove a user's pronunciation recording.", exception.getMessage());
+        verify(contentHostingService, never()).removeResource(anyString());
+    }
+
+    @Test
+    public void removePronunciationRecordingAllowsOwner() throws Exception {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user1Id);
+        when(userDirectoryService.getUser(user1Id)).thenReturn(user1);
+        when(sakaiPersonManager.getSakaiPerson(any(), any())).thenReturn(Optional.empty());
+
+        assertTrue(profileService.removePronunciationRecording(user1Id));
+        verify(contentHostingService).removeResource("/private/namePronunciation/" + user1Id + ".ogg");
+    }
+
+    @Test
+    public void removePronunciationRecordingAllowsSuperUser() throws Exception {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user2Id);
+        when(securityService.isSuperUser()).thenReturn(true);
+        when(userDirectoryService.getUser(user1Id)).thenReturn(user1);
+        when(sakaiPersonManager.getSakaiPerson(any(), any())).thenReturn(Optional.empty());
+
+        assertTrue(profileService.removePronunciationRecording(user1Id));
+        verify(contentHostingService).removeResource("/private/namePronunciation/" + user1Id + ".ogg");
+    }
+
+    @Test
+    public void getProfileImageReturnsBlankImageForBlankUser() {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user1Id);
+
+        ProfileImage image = profileService.getProfileImage(ProfileConstants.BLANK, ProfileConstants.PROFILE_IMAGE_MAIN, null);
+
+        assertNotNull(image);
+        assertTrue(image.isDefault());
+        assertNull(image.getAltText());
+        assertNotNull(image.getUrl());
+    }
+
+    @Test
+    public void getProfileImageReturnsBlankImageWhenRoleSwappedAndNotSuperUser() {
+
+        String otherUserId = UUID.randomUUID().toString();
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user1Id);
+        when(securityService.isUserRoleSwapped()).thenReturn(true);
+        when(securityService.isSuperUser()).thenReturn(false);
+
+        ProfileImage image = profileService.getProfileImage(otherUserId, ProfileConstants.PROFILE_IMAGE_MAIN, null);
+
+        assertNotNull(image);
+        assertTrue(image.isDefault());
+        assertNull(image.getAltText());
+        assertNotNull(image.getUrl());
+    }
+
+    @Test
+    public void getProfileImageSuperUserBypassesRoleSwappedBlanking() throws UserNotDefinedException {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user2Id);
+        when(securityService.isUserRoleSwapped()).thenReturn(true);
+        when(securityService.isSuperUser()).thenReturn(true);
+        when(userDirectoryService.getUser(user1Id)).thenReturn(user1);
+
+        ProfileImage image = profileService.getProfileImage(user1Id, ProfileConstants.PROFILE_IMAGE_MAIN, null);
+
+        assertNotNull(image);
+        assertNotNull(image.getAltText());
+        assertFalse(image.getAltText().isBlank());
+    }
+
+    @Test
+    public void getProfileImageReturnsBlankImageForBlankUserWhenSuperUser() {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user1Id);
+        when(securityService.isUserRoleSwapped()).thenReturn(true);
+        when(securityService.isSuperUser()).thenReturn(true);
+
+        ProfileImage image = profileService.getProfileImage(ProfileConstants.BLANK, ProfileConstants.PROFILE_IMAGE_MAIN, null);
+
+        assertNotNull(image);
+        assertTrue(image.isDefault());
+        assertNull(image.getAltText());
+        assertNotNull(image.getUrl());
+    }
+
+    @Test
+    public void getUsersOwnProfile() {
+
+        Exception exception = assertThrows(SecurityException.class, () -> profileService.getUserProfile(user1Id));
+		    assertEquals("Must be logged in to get a UserProfile.", exception.getMessage());
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user1Id);
+        ProfileTransferBean userProfile = profileService.getUserProfile(user1Id);
+        assertNull(userProfile);
+
+        try {
+          when(userDirectoryService.getUser(user1Id)).thenReturn(user1);
+        } catch (UserNotDefinedException e) {
+        }
+
+        Optional<SakaiPerson> person = Optional.ofNullable(mock(SakaiPerson.class));
+			  when(sakaiPersonManager.getSakaiPerson(any(), any())).thenReturn(person);
+
+        userProfile = profileService.getUserProfile(user1Id);
+        assertNotNull(userProfile);
+
+        assertEquals(user1Id, userProfile.id);
+        assertEquals(user1.getDisplayName(), userProfile.displayName);
+    }
+
+    @Test
+    public void getOtherUsersProfile() {
+
+        String viewerId = UUID.randomUUID().toString();
+
+        User viewer = mock(User.class);
+        when(viewer.getType()).thenReturn("user");
+
+        try {
+          when(userDirectoryService.getUser(user1Id)).thenReturn(user1);
+          when(userDirectoryService.getUser(viewerId)).thenReturn(viewer);
+        } catch (UserNotDefinedException e) {
+        }
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(viewerId);
+        ProfileTransferBean userProfile = profileService.getUserProfile(user1Id);
+        assertNotNull(userProfile);
+
+        Optional<SakaiPerson> person = Optional.ofNullable(mock(SakaiPerson.class));
+			  when(sakaiPersonManager.getSakaiPerson(any(), any())).thenReturn(person);
+
+        // This is not our profile, and we are not a super user.
+        assertNull(userProfile.email);
+
+        // Super users or the owner can view the email
+        when(securityService.isSuperUser()).thenReturn(true);
+        userProfile = profileService.getUserProfile(user1Id);
+        assertNotNull(userProfile.email);
+    }
+
+    @Test
+    public void saveUserProfile() {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user1Id);
+
+        try {
+          when(userDirectoryService.getUser(user1Id)).thenReturn(user1);
+        } catch (UserNotDefinedException e) {
+        }
+
+        Optional<SakaiPerson> person = Optional.ofNullable(mock(SakaiPerson.class));
+			  when(sakaiPersonManager.getSakaiPerson(any(), any())).thenReturn(person);
+
+        ProfileTransferBean userProfile = profileService.getUserProfile(user1Id);
+        assertNotNull(userProfile);
+
+        String newEmail = "user1@example.com";
+        userProfile.email = newEmail;
+
+        String facebookUrl = "https://www.facebook.com/user1";
+        String instagramUrl = "https://www.instagram.com/user1";
+        String linkedinUrl = "https://www.linkedin.com/user1";
+        String nickname = "Khyber pass";
+
+        userProfile.facebookUrl = facebookUrl;
+        userProfile.instagramUrl = instagramUrl;
+        userProfile.linkedinUrl = linkedinUrl;
+        userProfile.nickname = nickname;
+        userProfile.imageUserPreference = "upload";
+
+        when(preferencesService.applyEditWithAutoCommit(any(), any())).thenReturn(true);
+
+        profileService.saveUserProfile(userProfile);
+
+        when(person.get().getNickname()).thenReturn(nickname);
+
+        userProfile = profileService.getUserProfile(user1Id);
+
+        assertEquals(nickname, userProfile.nickname);
+        assertEquals(facebookUrl, userProfile.facebookUrl);
+        assertEquals(instagramUrl, userProfile.instagramUrl);
+        assertEquals(linkedinUrl, userProfile.linkedinUrl);
+    }
+
+    @Test
+    public void saveUserProfileUpdatesAccountEmail() throws Exception {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user1Id);
+        when(userDirectoryService.getUser(user1Id)).thenReturn(user1);
+        when(sakaiPersonManager.getSakaiPerson(any(), any())).thenReturn(Optional.of(mock(SakaiPerson.class)));
+
+        UserEdit userEdit = mock(UserEdit.class);
+        when(userDirectoryService.editUser(user1Id)).thenReturn(userEdit);
+        when(serverConfigurationService.getBoolean("user.email.allowduplicates", true)).thenReturn(true);
+
+        ProfileTransferBean userProfile = profileService.getUserProfile(user1Id);
+        String newEmail = "newaddress@mailinator.com";
+        userProfile.email = newEmail;
+
+        profileService.saveUserProfile(userProfile);
+
+        verify(userEdit).setEmail(newEmail);
+        verify(userDirectoryService).commitEdit(userEdit);
+    }
+
+    @Test
+    public void saveUserProfileDiscardsDuplicateEmail() throws Exception {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user1Id);
+        when(userDirectoryService.getUser(user1Id)).thenReturn(user1);
+        when(sakaiPersonManager.getSakaiPerson(any(), any())).thenReturn(Optional.of(mock(SakaiPerson.class)));
+
+        UserEdit userEdit = mock(UserEdit.class);
+        when(userDirectoryService.editUser(user1Id)).thenReturn(userEdit);
+
+        // user2 already has this email and duplicates are not allowed
+        String duplicateEmail = "user2@mailinator.com";
+        User user2 = mock(User.class);
+        when(user2.getId()).thenReturn(user2Id);
+        when(serverConfigurationService.getBoolean("user.email.allowduplicates", true)).thenReturn(false);
+        when(userDirectoryService.findUsersByEmail(duplicateEmail)).thenReturn(List.of(user2));
+
+        ProfileTransferBean userProfile = profileService.getUserProfile(user1Id);
+        userProfile.email = duplicateEmail;
+
+        profileService.saveUserProfile(userProfile);
+
+        verify(userEdit, never()).setEmail(anyString());
+        verify(userDirectoryService, never()).commitEdit(any());
+    }
+
+    @Test
+    public void saveUserProfileSkipsAccountEditWhenEmailUnchanged() throws Exception {
+
+        when(sessionManager.getCurrentSessionUserId()).thenReturn(user1Id);
+        when(userDirectoryService.getUser(user1Id)).thenReturn(user1);
+        when(sakaiPersonManager.getSakaiPerson(any(), any())).thenReturn(Optional.of(mock(SakaiPerson.class)));
+
+        ProfileTransferBean userProfile = profileService.getUserProfile(user1Id);
+        // email is left as loaded (user1@mailinator.com), only another field changes
+        userProfile.nickname = "Ace";
+
+        profileService.saveUserProfile(userProfile);
+
+        // No account edit round-trip (isAccountUpdateAllowed / updateEmailForUser) when the email did not change
+        verify(userDirectoryService, never()).editUser(anyString());
+    }
+
+    @Test
+    public void isEmailDuplicateHonoursAllowDuplicatesProperty() {
+
+        String email = "user2@mailinator.com";
+        User user2 = mock(User.class);
+        when(user2.getId()).thenReturn(user2Id);
+        when(userDirectoryService.findUsersByEmail(email)).thenReturn(List.of(user2));
+
+        // Another user has the email and duplicates are not allowed
+        when(serverConfigurationService.getBoolean("user.email.allowduplicates", true)).thenReturn(false);
+        assertTrue(profileService.isEmailDuplicate(user1Id, email));
+
+        // The only user with the email is the user themselves
+        assertFalse(profileService.isEmailDuplicate(user2Id, email));
+
+        // Duplicates are allowed globally
+        when(serverConfigurationService.getBoolean("user.email.allowduplicates", true)).thenReturn(true);
+        assertFalse(profileService.isEmailDuplicate(user1Id, email));
+    }
+}

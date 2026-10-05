@@ -1,0 +1,1121 @@
+/**********************************************************************************
+ * $URL$
+ * $Id$
+ ***********************************************************************************
+ *
+ * Copyright (c) 2008 The Sakai Foundation
+ *
+ * Licensed under the Educational Community License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.opensource.org/licenses/ECL-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ **********************************************************************************/
+
+package org.sakaiproject.poll.test.service;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.ResourceBundle;
+import java.util.Set;
+import java.util.TimeZone;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.Mockito;
+import org.sakaiproject.authz.api.SecurityService;
+import org.sakaiproject.exception.IdUnusedException;
+import org.sakaiproject.poll.api.model.Option;
+import org.sakaiproject.poll.api.model.Poll;
+import org.sakaiproject.poll.api.model.Vote;
+import org.sakaiproject.poll.api.model.VoteCollection;
+import org.sakaiproject.poll.api.service.PollImportError;
+import org.sakaiproject.poll.api.service.PollImportException;
+import org.sakaiproject.poll.api.service.PollsService;
+import org.sakaiproject.poll.impl.service.PollsServiceImpl;
+import org.sakaiproject.site.api.Group;
+import org.sakaiproject.site.api.Site;
+import org.sakaiproject.site.api.SiteService;
+import org.sakaiproject.time.api.UserTimeService;
+import org.sakaiproject.tool.api.SessionManager;
+import org.sakaiproject.util.ResourceLoader;
+import org.sakaiproject.util.api.FormattedText;
+import org.sakaiproject.util.api.LocaleService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.util.AopTestUtils;
+
+import static org.sakaiproject.poll.api.PollConstants.*;
+
+import lombok.extern.slf4j.Slf4j;
+
+@ContextConfiguration(classes = {PollsServiceTestConfiguration.class})
+@Slf4j
+@RunWith(SpringJUnit4ClassRunner.class)
+public class PollsServiceTests {
+
+    public final static String USER_NO_ACCEESS = "user-nobody";
+    public final static String USER = "user-12345678";
+    public final static String LOCATION1_ID = "ref-1111111";
+    public final static String LOCATION1_REF = "/site/" + LOCATION1_ID;
+
+    @Autowired private PollsService pollsService;
+    @Autowired private SecurityService securityService;
+    @Autowired private SiteService siteService;
+    @Autowired private SessionManager sessionManager;
+    @Autowired private FormattedText formattedText;
+    @Autowired private LocaleService localeService;
+    @Autowired private UserTimeService userTimeService;
+
+    /** Backs the mocked {@code pollsBundle}, so tests can pick which locale's real translations it resolves. */
+    private final AtomicReference<Locale> pollsBundleLocale = new AtomicReference<>(Locale.ROOT);
+
+    @Before
+    public void onSetUp() {
+        ResourceLoader etsOptionDeleted = Mockito.mock(ResourceLoader.class);
+        Mockito.when(etsOptionDeleted.getString("subject")).thenReturn("A poll option you voted for has been deleted");
+        Mockito.when(etsOptionDeleted.getString("message1")).thenReturn("Dear");
+        Mockito.when(etsOptionDeleted.getString("message2")).thenReturn("The poll option you voted for in the site");
+        Mockito.when(etsOptionDeleted.getString("message3")).thenReturn("has been deleted by a poll maintainer. The poll question is:");
+        Mockito.when(etsOptionDeleted.getString("message4")).thenReturn("Please log in to");
+        Mockito.when(etsOptionDeleted.getString("message5")).thenReturn("and place a new vote for the poll.");
+        ((PollsServiceImpl) AopTestUtils.getTargetObject(pollsService)).setOptionDeletedBundle(etsOptionDeleted);
+
+        pollsBundleLocale.set(Locale.ROOT);
+        ResourceLoader pollsBundle = Mockito.mock(ResourceLoader.class);
+        Mockito.when(pollsBundle.getString(Mockito.anyString())).thenAnswer(invocation ->
+            ResourceBundle.getBundle("bundle.polls", pollsBundleLocale.get()).getString(invocation.getArgument(0)));
+        ((PollsServiceImpl) AopTestUtils.getTargetObject(pollsService)).setPollsBundle(pollsBundle);
+
+        Mockito.when(siteService.siteReference(LOCATION1_ID)).thenReturn(LOCATION1_REF);
+
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        Mockito.when(securityService.unlock(USER, "site.visit", LOCATION1_REF)).thenReturn(true);
+        Mockito.when(securityService.unlock(USER, PERMISSION_ADD, LOCATION1_REF)).thenReturn(true);
+        Mockito.when(securityService.unlock(USER, PERMISSION_DELETE_OWN, LOCATION1_REF)).thenReturn(true);
+        Mockito.when(securityService.unlock(USER, PERMISSION_DELETE_ANY, LOCATION1_REF)).thenReturn(true);
+        Mockito.when(securityService.unlock(USER_NO_ACCEESS, PERMISSION_ADD, LOCATION1_REF)).thenReturn(false);
+        Mockito.when(formattedText.processFormattedText(Mockito.anyString(), Mockito.isNull(), Mockito.eq(true), Mockito.eq(true)))
+               .thenAnswer(inv -> inv.getArgument(0));
+        Mockito.when(userTimeService.getLocalTimeZone()).thenReturn(TimeZone.getTimeZone("UTC"));
+        Mockito.when(localeService.getLocaleForCurrentSiteAndUser()).thenReturn(Locale.US);
+
+        Site mockSite = Mockito.mock(Site.class);
+        Group g1 = Mockito.mock(Group.class);
+        Mockito.when(g1.getId()).thenReturn("g1");
+        Mockito.when(g1.getTitle()).thenReturn("Group 1");
+        Mockito.when(mockSite.getGroups()).thenReturn(List.of(g1));
+        try {
+            Mockito.doReturn(mockSite).when(siteService).getSite(LOCATION1_ID);
+        } catch (IdUnusedException e) {}
+    }
+
+    private String createPoll(String ownerId, String siteId) {
+        Poll poll1 = new Poll();
+        poll1.setCreationDate(Instant.now());
+        poll1.setVoteOpen(Instant.now());
+        poll1.setVoteClose(Instant.now().plus(1, ChronoUnit.DAYS));
+        poll1.setDescription("this is some text");
+        poll1.setText("something");
+        poll1.setOwner(ownerId);
+        poll1.setSiteId(siteId);
+
+        Option option1 = new Option();
+        option1.setText("Option 1");
+        poll1.addOption(option1);
+
+        Option option2 = new Option();
+        option2.setText("Option 2");
+        poll1.addOption(option2);
+
+        return pollsService.savePoll(poll1).getId();
+    }
+
+    @Test
+    public void testGetPollById() {
+        // we shouldNot find this poll
+        Optional<Poll> pollFail = pollsService.getPollById("non-existent-uuid");
+        Assert.assertTrue(pollFail.isEmpty());
+
+        // this one should exist -- the preload saves one poll and remembers its ID
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+        Assert.assertTrue(poll.isPresent());
+
+        // it should have options
+        Assert.assertNotNull(poll.get().getOptions());
+        Assert.assertFalse(poll.get().getOptions().isEmpty());
+
+        // we expect this one to fails
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER_NO_ACCEESS);
+        Assert.assertThrows(SecurityException.class, () -> pollsService.getPollById(pollId));
+    }
+
+    @Test
+    public void testSavePoll() {
+        Poll poll1 = new Poll();
+        poll1.setCreationDate(Instant.now());
+        poll1.setVoteOpen(Instant.now());
+        poll1.setVoteClose(Instant.now());
+        poll1.setDescription("this is some text");
+        poll1.setText("something");
+        poll1.setOwner(USER);
+        poll1.setSiteId(LOCATION1_ID);
+
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        Poll savedPoll1 = pollsService.savePoll(poll1);
+        Assert.assertNotNull(savedPoll1);
+        Assert.assertNotNull(savedPoll1.getId());
+        Assert.assertEquals(poll1.getText(), savedPoll1.getText());
+
+        Assert.assertThrows(IllegalArgumentException.class, () -> pollsService.savePoll(null));
+
+        Poll poll = new Poll();
+        poll.setText("sdfgsdf");
+        Assert.assertThrows(IllegalArgumentException.class, () -> pollsService.savePoll(poll));
+
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER_NO_ACCEESS);
+        Assert.assertThrows(SecurityException.class, () -> pollsService.savePoll(poll1));
+    }
+
+    @Test
+    public void testDeletePoll() {
+
+        Poll poll1 = new Poll();
+        poll1.setCreationDate(Instant.now());
+        poll1.setVoteOpen(Instant.now());
+        poll1.setVoteClose(Instant.now());
+        poll1.setDescription("this is some text");
+        poll1.setText("something");
+        poll1.setOwner(USER);
+        poll1.setSiteId(LOCATION1_ID);
+
+        // we should not be able to delete a poll that hasn't been saved
+        Assert.assertThrows(IllegalArgumentException.class, () -> pollsService.deletePoll(poll1.getId()));
+
+        Option option1 = new Option();
+        option1.setText("asdgasd");
+        poll1.addOption(option1);
+
+        Option option2 = new Option();
+        option2.setText("zsdbsdfb");
+        poll1.addOption(option2);
+
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        Poll savedPoll = pollsService.savePoll(poll1);
+
+        Vote vote = new Vote();
+        vote.setIp("Localhost");
+        vote.setUserId(USER);
+        vote.setVoteDate(Instant.now());
+        vote.setSubmissionId(USER + ":" + UUID.randomUUID());
+        vote.setOption(option1);
+
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        pollsService.saveVote(vote);
+
+        List<Vote> votes = pollsService.getAllVotesForPoll(savedPoll.getId());
+
+        Assert.assertEquals(2, savedPoll.getOptions().size());
+        Assert.assertEquals(1, votes.size());
+        savedPoll.getOptions().forEach(o -> Assert.assertNotNull(o.getId()));
+        votes.forEach(v -> Assert.assertNotNull(v.getId()));
+
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER_NO_ACCEESS);
+        Assert.assertThrows(SecurityException.class, () -> pollsService.deletePoll(savedPoll.getId()));
+
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        try {
+            pollsService.deletePoll(savedPoll.getId());
+        } catch (SecurityException e) {
+            log.error(e.toString());
+            Assert.fail();
+        }
+
+        Optional<Poll> deletedPoll = pollsService.getPollById(savedPoll.getId());
+        Assert.assertTrue(deletedPoll.isEmpty());
+    }
+
+    @Test
+    public void testFindAllPolls() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+
+        List<Poll> pollsBefore = pollsService.findAllPolls();
+        int initialCount = pollsBefore.size();
+
+        createPoll(USER, LOCATION1_ID);
+        createPoll(USER, LOCATION1_ID);
+
+        List<Poll> pollsAfter = pollsService.findAllPolls();
+        Assert.assertEquals(initialCount + 2, pollsAfter.size());
+    }
+
+    @Test
+    public void testFindAllPollsBySite() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+
+        String site1 = LOCATION1_ID;
+        String site2 = "site-2222";
+        String site2Ref = "/site/" + site2;
+
+        Mockito.when(siteService.siteReference(site2)).thenReturn(site2Ref);
+        Mockito.when(securityService.unlock(USER, PERMISSION_ADD, site2Ref)).thenReturn(true);
+
+        createPoll(USER, site1);
+        createPoll(USER, site1);
+        createPoll(USER, site2);
+
+        List<Poll> site1Polls = pollsService.findAllPolls(site1);
+        Assert.assertTrue(site1Polls.size() >= 2);
+        site1Polls.forEach(p -> Assert.assertEquals(site1, p.getSiteId()));
+    }
+
+    @Test
+    public void testGetPoll() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+
+        String ref = "/poll/" + LOCATION1_ID + "/" + pollId;
+        Optional<Poll> poll = pollsService.getPoll(ref);
+        Assert.assertTrue(poll.isPresent());
+        Assert.assertEquals(pollId, poll.get().getId());
+
+        Optional<Poll> notFound = pollsService.getPoll("/poll/nonexistent/ref");
+        Assert.assertTrue(notFound.isEmpty());
+    }
+
+    @Test
+    public void testGetPollWithVotes() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+
+        Optional<Poll> pollOpt = pollsService.getPollWithVotes(pollId);
+        Assert.assertTrue(pollOpt.isPresent());
+        Assert.assertEquals(pollId, pollOpt.get().getId());
+
+        Optional<Poll> notFound = pollsService.getPollWithVotes("nonexistent-id");
+        Assert.assertTrue(notFound.isEmpty());
+    }
+
+    // ========== Option Tests ==========
+
+    @Test
+    public void testGetOptionById() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+        Long optionId = poll.get().getOptions().get(0).getId();
+
+        Optional<Option> option = pollsService.getOptionById(optionId);
+        Assert.assertTrue(option.isPresent());
+        Assert.assertEquals(optionId, option.get().getId());
+
+        Optional<Option> notFound = pollsService.getOptionById(999999L);
+        Assert.assertTrue(notFound.isEmpty());
+    }
+
+    @Test
+    public void testGetVisibleOptionsForPoll() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+
+        List<Option> options = pollsService.getVisibleOptionsForPoll(pollId);
+        Assert.assertEquals(2, options.size());
+
+        // Soft delete one option
+        Long optionId = options.get(0).getId();
+        pollsService.deleteOption(optionId, true);
+
+        List<Option> visibleOptions = pollsService.getVisibleOptionsForPoll(pollId);
+        Assert.assertEquals(1, visibleOptions.size());
+    }
+
+    @Test
+    public void testSaveNewOption() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        Option newOption = new Option();
+        String random = UUID.randomUUID().toString();
+        newOption.setText(random);
+
+        Poll saved = pollsService.saveNewOption(poll.get(), newOption);
+        Assert.assertNotNull(saved);
+        Assert.assertNotNull(saved.getOptions().stream().filter(o -> o.getText().equals(random)).findFirst().orElse(null));
+    }
+
+    @Test
+    public void testDeleteOption() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+        Long optionId = poll.get().getOptions().get(0).getId();
+
+        pollsService.deleteOption(optionId);
+
+        Optional<Option> deleted = pollsService.getOptionById(optionId);
+        Assert.assertTrue(deleted.isEmpty());
+    }
+
+    @Test
+    public void testDeleteOptionSoft() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+        Long optionId = poll.get().getOptions().get(0).getId();
+
+        pollsService.deleteOption(optionId, true);
+
+        Optional<Option> softDeleted = pollsService.getOptionById(optionId);
+        Assert.assertTrue(softDeleted.isPresent());
+        Assert.assertTrue(softDeleted.get().getDeleted());
+    }
+
+    @Test
+    public void testSaveNewOptionsBatch() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+
+        List<String> optionTexts = List.of("Batch Option 1", "Batch Option 2", "Batch Option 3");
+        pollsService.saveOptionsBatch(pollId, optionTexts);
+
+        // Reload poll to get updated options
+        Optional<Poll> reloaded = pollsService.getPollById(pollId);
+        List<Option> options = pollsService.getVisibleOptionsForPoll(pollId);
+        Assert.assertTrue(options.size() >= 5); // 2 original + 3 new
+    }
+
+    @Test
+    public void testDeleteOptionWithVoteHandling() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+        Option option = poll.get().getOptions().get(0);
+        Long optionId = option.getId();
+
+        Vote vote = new Vote();
+        vote.setIp("Localhost");
+        vote.setUserId(USER);
+        vote.setVoteDate(Instant.now());
+        vote.setSubmissionId(USER + ":" + UUID.randomUUID());
+        vote.setOption(option);
+        pollsService.saveVote(vote);
+
+        Poll result = pollsService.deleteOptionWithVoteHandling(optionId, "do-nothing");
+        Assert.assertNotNull(result);
+
+        // Reload the option from database
+        Optional<Poll> reloadedPoll = pollsService.getPollById(pollId);
+        Optional<Option> softDeleted = reloadedPoll.get().getOptions().stream()
+            .filter(o -> o.getId().equals(optionId))
+            .findFirst();
+        Assert.assertTrue(softDeleted.isPresent());
+        Assert.assertTrue(softDeleted.get().getDeleted());
+    }
+
+    @Test
+    public void testReorderOptions() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+        Assert.assertTrue(poll.isPresent());
+
+        // Add a third option
+        Option option3 = new Option();
+        option3.setText("Option 3");
+        poll.get().addOption(option3);
+        pollsService.savePoll(poll.get());
+
+        // Reload and capture original order
+        poll = pollsService.getPollById(pollId);
+        List<Option> options = poll.get().getOptions();
+        Assert.assertEquals(3, options.size());
+
+        Long firstOptionId = options.get(0).getId();
+        Long secondOptionId = options.get(1).getId();
+        Long thirdOptionId = options.get(2).getId();
+
+        // Reorder: move last option to first position
+        Option movedOption = options.remove(2);
+        options.add(0, movedOption);
+
+        // Save and reload
+        pollsService.savePoll(poll.get());
+        poll = pollsService.getPollById(pollId);
+        List<Option> reorderedOptions = poll.get().getOptions();
+
+        // Verify the new order
+        Assert.assertEquals(3, reorderedOptions.size());
+        Assert.assertEquals(thirdOptionId, reorderedOptions.get(0).getId());
+        Assert.assertEquals(firstOptionId, reorderedOptions.get(1).getId());
+        Assert.assertEquals(secondOptionId, reorderedOptions.get(2).getId());
+    }
+
+    // ========== Vote Tests ==========
+
+    @Test
+    public void testGetVoteById() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        Vote vote = new Vote();
+        vote.setIp("127.0.0.1");
+        vote.setUserId(USER);
+        vote.setVoteDate(Instant.now());
+        vote.setSubmissionId(USER + ":" + UUID.randomUUID());
+        vote.setOption(poll.get().getOptions().get(0));
+        pollsService.saveVote(vote);
+
+        Optional<Vote> retrieved = pollsService.getVoteById(vote.getId());
+        Assert.assertTrue(retrieved.isPresent());
+        Assert.assertEquals(vote.getId(), retrieved.get().getId());
+
+        Optional<Vote> notFound = pollsService.getVoteById(999999L);
+        Assert.assertTrue(notFound.isEmpty());
+    }
+
+    @Test
+    public void testSaveVoteList() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        List<Vote> votes = List.of(
+            createVoteForOption(poll.get().getOptions().get(0)),
+            createVoteForOption(poll.get().getOptions().get(1))
+        );
+
+        pollsService.saveVoteList(votes);
+
+        votes.forEach(v -> Assert.assertNotNull(v.getId()));
+    }
+
+    @Test
+    public void testCreateVote() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+        Option option = poll.get().getOptions().get(0);
+
+        String submissionId = UUID.randomUUID().toString();
+        Vote vote = pollsService.createVote(poll.get(), option, submissionId);
+
+        Assert.assertNotNull(vote);
+        Assert.assertEquals(submissionId, vote.getSubmissionId());
+        Assert.assertEquals(USER, vote.getUserId());
+        Assert.assertNotNull(vote.getVoteDate());
+    }
+
+    @Test
+    public void testGetAllVotesForOption() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+        Option option = poll.get().getOptions().get(0);
+        Long optionId = option.getId();
+
+        Vote vote1 = createVoteForOption(option);
+        Vote vote2 = createVoteForOption(option);
+        pollsService.saveVote(vote1);
+        pollsService.saveVote(vote2);
+
+        // Reload option to ensure proper relationship
+        Optional<Poll> reloaded = pollsService.getPollById(pollId);
+        Option reloadedOption = reloaded.get().getOptions().stream()
+            .filter(o -> o.getId().equals(optionId))
+            .findFirst().get();
+
+        List<Vote> votes = pollsService.getAllVotesForOption(reloadedOption);
+        Assert.assertTrue(votes.size() >= 2);
+    }
+
+    @Test
+    public void testGetVotesForUser() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        Vote vote = createVoteForOption(poll.get().getOptions().get(0));
+        pollsService.saveVote(vote);
+
+        java.util.Map<String, List<Vote>> votesMap = pollsService.getVotesForUser(USER, null);
+        Assert.assertFalse(votesMap.isEmpty());
+    }
+
+    @Test
+    public void testGetDistinctVotersForPoll() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        String submissionId = UUID.randomUUID().toString();
+        Vote vote1 = createVoteForOption(poll.get().getOptions().get(0));
+        vote1.setSubmissionId(submissionId);
+        Vote vote2 = createVoteForOption(poll.get().getOptions().get(1));
+        vote2.setSubmissionId(submissionId); // Same submission
+
+        pollsService.saveVote(vote1);
+        pollsService.saveVote(vote2);
+
+        int distinctVoters = pollsService.getDistinctVotersForPoll(poll.get());
+        Assert.assertTrue(distinctVoters >= 1);
+    }
+
+    @Test
+    public void testDeleteVote() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        Vote vote = createVoteForOption(poll.get().getOptions().get(0));
+        pollsService.saveVote(vote);
+        Long voteId = vote.getId();
+
+        pollsService.deleteVote(vote);
+
+        Optional<Vote> deleted = pollsService.getVoteById(voteId);
+        Assert.assertTrue(deleted.isEmpty());
+    }
+
+    @Test
+    public void testDeleteAllVotes() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        Vote vote1 = createVoteForOption(poll.get().getOptions().get(0));
+        Vote vote2 = createVoteForOption(poll.get().getOptions().get(1));
+        pollsService.saveVote(vote1);
+        pollsService.saveVote(vote2);
+
+        List<Vote> votes = List.of(vote1, vote2);
+        pollsService.deleteAll(votes);
+
+        votes.forEach(v -> {
+            Optional<Vote> deleted = pollsService.getVoteById(v.getId());
+            Assert.assertTrue(deleted.isEmpty());
+        });
+    }
+
+    @Test
+    public void testSubmitVote() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        Mockito.when(securityService.unlock(USER, PERMISSION_VOTE, LOCATION1_REF)).thenReturn(true);
+        Mockito.when(securityService.unlock("poll.vote", LOCATION1_REF)).thenReturn(true);
+
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+        Long optionId = poll.get().getOptions().get(0).getId();
+
+        VoteCollection voteCollection = pollsService.submitVote(pollId, List.of(optionId));
+
+        Assert.assertNotNull(voteCollection);
+        Assert.assertFalse(voteCollection.getVotes().isEmpty());
+    }
+
+    // ========== Permission/Authorization Tests ==========
+
+    @Test
+    public void testUserCanDeletePoll() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        boolean canDelete = pollsService.userCanDeletePoll(poll.get());
+        Assert.assertTrue(canDelete);
+    }
+
+    @Test
+    public void testIsPollPublic() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        poll.get().setPublic(true);
+        pollsService.savePoll(poll.get());
+
+        boolean isPublic = pollsService.isPollPublic(poll.get());
+        Assert.assertTrue(isPublic);
+    }
+
+    @Test
+    public void testUserHasVoted() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        Assert.assertFalse(pollsService.userHasVoted(pollId, USER));
+
+        Vote vote = createVoteForOption(poll.get().getOptions().get(0));
+        pollsService.saveVote(vote);
+
+        Assert.assertTrue(pollsService.userHasVoted(pollId, USER));
+        Assert.assertTrue(pollsService.userHasVoted(pollId)); // current user version
+    }
+
+    @Test
+    public void testIsUserAllowedVote() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        Mockito.when(securityService.unlock(USER, PERMISSION_VOTE, LOCATION1_REF)).thenReturn(true);
+
+        String pollId = createPoll(USER, LOCATION1_ID);
+
+        boolean allowed = pollsService.isUserAllowedVote(USER, pollId, true);
+        Assert.assertTrue(allowed);
+    }
+
+    @Test
+    public void testPollIsVotable() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        Mockito.when(securityService.unlock("poll.vote", LOCATION1_REF)).thenReturn(true);
+        Mockito.when(siteService.siteReference(LOCATION1_ID)).thenReturn(LOCATION1_REF);
+
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        boolean votable = pollsService.pollIsVotable(poll.get());
+        Assert.assertTrue(votable);
+    }
+
+    @Test
+    public void testIsAllowedViewResults() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        Mockito.when(securityService.unlock(USER, "site.upd", LOCATION1_REF)).thenReturn(true);
+
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        boolean allowed = pollsService.isAllowedViewResults(poll.get(), USER);
+        Assert.assertTrue(allowed);
+    }
+
+    // ========== Bulk Operations Tests ==========
+
+    @Test
+    public void testDeletePolls() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId1 = createPoll(USER, LOCATION1_ID);
+        String pollId2 = createPoll(USER, LOCATION1_ID);
+
+        pollsService.deletePolls(List.of(pollId1, pollId2));
+
+        Assert.assertTrue(pollsService.getPollById(pollId1).isEmpty());
+        Assert.assertTrue(pollsService.getPollById(pollId2).isEmpty());
+    }
+
+    @Test
+    public void testResetPollVotes() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        String pollId = createPoll(USER, LOCATION1_ID);
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+
+        Vote vote = createVoteForOption(poll.get().getOptions().get(0));
+        pollsService.saveVote(vote);
+
+        pollsService.resetPollVotes(List.of(pollId));
+
+        List<Vote> votes = pollsService.getAllVotesForPoll(pollId);
+        Assert.assertTrue(votes.isEmpty());
+    }
+
+    // ========== Bulk Import Tests ==========
+
+    private String importCsvHeader(int optionColumnCount) {
+        StringBuilder header = new StringBuilder("Question,Description,Access,Groups,Opening date,Opening time,"
+            + "Closing date,Closing time,Minimum options,Maximum options,Results visibility");
+        for (int option = 1; option <= optionColumnCount; option++) {
+            header.append(",Option ").append(option);
+        }
+        return header.toString();
+    }
+
+    @Test
+    public void testImportPollsFromCsvCreatesPolls() {
+        String csv = importCsvHeader(3) + "\n"
+            + "What is your favorite color?,,site,,2026-06-01,09:00,2026-06-02,17:00,1,1,1,Blue,Green,Red\n";
+
+        pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+        Poll saved = pollsService.findAllPolls(LOCATION1_ID).stream()
+            .filter(p -> "What is your favorite color?".equals(p.getText()))
+            .findFirst()
+            .orElseThrow();
+        Assert.assertEquals(USER, saved.getOwner());
+        Assert.assertTrue(saved.getOptions().size() >= 2);
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsInvalidCsv() {
+        String csv = importCsvHeader(2) + "\n"
+            + "Question?,,site,,2026-06-01,09:00,2026-06-02,17:00,1,1,1,OnlyOneOption\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.TOO_FEW_OPTIONS, exception.getError());
+        Assert.assertEquals(2, exception.getRowNumber());
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsBlankRows() {
+        int pollCount = pollsService.findAllPolls(LOCATION1_ID).size();
+        String csv = "\uFEFF,,,\n,,,,,,,\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.WRONG_FORMAT, exception.getError());
+        Assert.assertEquals(pollCount, pollsService.findAllPolls(LOCATION1_ID).size());
+    }
+
+    @Test
+    public void testImportPollsFromCsvHandlesQuotedDescriptionWithCommas() {
+        String csv = importCsvHeader(2) + "\n"
+            + "Question with quoted description?,\"This, description, has, commas\",site,,2026-06-01,09:00,2026-06-02,17:00,1,1,1,Opt1,Opt2\n";
+
+        pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+        Poll saved = pollsService.findAllPolls(LOCATION1_ID).stream()
+            .filter(p -> "Question with quoted description?".equals(p.getText()))
+            .findFirst()
+            .orElseThrow();
+        Assert.assertTrue(saved.getDescription().contains("This, description, has, commas"));
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsInvalidDates() {
+        String csv = importCsvHeader(2) + "\n"
+            + "Q?,,site,,32/13/2026,09:00,2026-06-02,17:00,1,1,1,One,Two\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.INVALID_DATES, exception.getError());
+        Assert.assertEquals(2, exception.getRowNumber());
+        Assert.assertArrayEquals(new Object[] { "32/13/2026" }, exception.getMessageArgs());
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsClosingDateBeforeOpeningDate() {
+        String csv = importCsvHeader(2) + "\n"
+            + "Q?,,site,,2026-06-02,09:00,2026-06-01,17:00,1,1,1,One,Two\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.INVALID_DATE_ORDER, exception.getError());
+        Assert.assertEquals(2, exception.getRowNumber());
+    }
+
+    @Test
+    public void testImportPollsFromCsvReportsRowNumberOfFailingRowInBatch() {
+        String csv = importCsvHeader(2) + "\n"
+            + "Valid question,,site,,2026-06-01,09:00,2026-06-02,17:00,1,1,1,A,B\n"
+            + "Q?,,site,,32/13/2026,09:00,2026-06-02,17:00,1,1,1,One,Two\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.INVALID_DATES, exception.getError());
+        Assert.assertEquals(3, exception.getRowNumber());
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsInvalidAccessValue() {
+        String csv = importCsvHeader(2) + "\n"
+            + "Q?,,publico,,2026-06-01,09:00,2026-06-02,17:00,1,1,1,One,Two\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.INVALID_ACCESS, exception.getError());
+        Assert.assertEquals(2, exception.getRowNumber());
+        Assert.assertArrayEquals(new Object[] { "publico" }, exception.getMessageArgs());
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsMissingQuestion() {
+        String csv = importCsvHeader(2) + "\n"
+            + ",,site,,2026-06-01,09:00,2026-06-02,17:00,1,1,1,One,Two\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.MISSING_QUESTION, exception.getError());
+        Assert.assertEquals(2, exception.getRowNumber());
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsInvalidNumber() {
+        String csv = importCsvHeader(2) + "\n"
+            + "Q?,,site,,2026-06-01,09:00,2026-06-02,17:00,uno,1,1,One,Two\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.INVALID_NUMBER, exception.getError());
+        Assert.assertEquals(2, exception.getRowNumber());
+        Assert.assertArrayEquals(new Object[] { "uno" }, exception.getMessageArgs());
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsInvalidDisplayResult() {
+        String csv = importCsvHeader(2) + "\n"
+            + "Q?,,site,,2026-06-01,09:00,2026-06-02,17:00,1,1,9,One,Two\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.INVALID_DISPLAY_RESULT, exception.getError());
+        Assert.assertEquals(2, exception.getRowNumber());
+        Assert.assertArrayEquals(new Object[] { "9" }, exception.getMessageArgs());
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsInvalidLimits() {
+        String csv = importCsvHeader(3) + "\n"
+            + "Q?,,site,,2026-06-01,09:00,2026-06-02,17:00,5,1,1,One,Two,Three\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.INVALID_LIMITS, exception.getError());
+        Assert.assertEquals(2, exception.getRowNumber());
+    }
+
+    @Test
+    public void testImportPollsFromCsvCreatesMultiplePolls() {
+        String csv = importCsvHeader(2) + "\n"
+            + "Bulk import Q1,,site,,2026-06-01,09:00,2026-06-02,17:00,1,1,1,A,B\n"
+            + "Bulk import Q2,,site,,2026-07-01,09:00,2026-07-02,17:00,1,1,1,X,Y\n";
+
+        pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+        List<String> pollTitles = pollsService.findAllPolls(LOCATION1_ID).stream().map(Poll::getText).toList();
+        Assert.assertTrue(pollTitles.contains("Bulk import Q1"));
+        Assert.assertTrue(pollTitles.contains("Bulk import Q2"));
+    }
+
+    @Test
+    public void testImportPollsFromCsvImportsPollNamedQuestion() {
+        String csv = importCsvHeader(2) + "\n"
+            + "Question,,site,,2026-06-01,09:00,2026-06-02,17:00,1,1,1,Yes,No\n";
+
+        pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+        Assert.assertTrue(pollsService.findAllPolls(LOCATION1_ID).stream()
+            .anyMatch(p -> "Question".equals(p.getText())));
+    }
+
+    @Test
+    public void testImportSampleCsvCreatesImportablePoll() {
+        // Locale.ROOT, not Locale.US: bundle.polls has no en/en_US variant, so requesting Locale.US would
+        // fall back to the JVM's default locale (e.g. es-ES under the "ES locale" CI matrix) before root.
+        String csv = pollsService.getPollImportSampleCsv(ResourceBundle.getBundle("bundle.polls", Locale.ROOT)::getString);
+
+        pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+        Assert.assertTrue(pollsService.findAllPolls(LOCATION1_ID).stream()
+            .anyMatch(p -> "What is your favorite color?".equals(p.getText())));
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsMissingHeaderRow() {
+        String csv = "Bulk import Q1,,site,,2026-06-01,09:00,2026-06-02,17:00,1,1,1,A,B\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.INVALID_HEADER, exception.getError());
+        Assert.assertEquals(1, exception.getRowNumber());
+    }
+
+    @Test
+    public void testImportPollsFromCsvHandlesSemicolonDelimiterOnCommaDecimalLocale() {
+        Mockito.when(localeService.getLocaleForCurrentSiteAndUser()).thenReturn(Locale.forLanguageTag("es-ES"));
+        String csv = importCsvHeader(2).replace(',', ';') + "\n"
+            + "Semicolon delimited question;\"Description; with a separator\";site;;01/06/26;09:00;02/06/2026;17:00;1;1;1;One;Two\n";
+
+        pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+        Poll saved = pollsService.findAllPolls(LOCATION1_ID).stream()
+            .filter(p -> "Semicolon delimited question".equals(p.getText())).findFirst().orElseThrow();
+        Assert.assertEquals("Description; with a separator", saved.getDescription());
+        Assert.assertEquals(Instant.parse("2026-06-01T09:00:00Z"), saved.getVoteOpen());
+        Assert.assertEquals(Instant.parse("2026-06-02T17:00:00Z"), saved.getVoteClose());
+    }
+
+    @Test
+    public void testImportPollsFromCsvHandlesSemicolonDelimiterOnCommaPreferringLocale() {
+        // Default @Before locale is Locale.US (comma-preferring): the account's locale doesn't
+        // guarantee the delimiter of a file built with another tool/locale, so ';' must still work.
+        String csv = importCsvHeader(2).replace(',', ';') + "\n"
+            + "Semicolon file on comma locale;\"Description; with a separator\";site;;2026-06-01;09:00;2026-06-02;17:00;1;1;1;One;Two\n";
+
+        pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+        Poll saved = pollsService.findAllPolls(LOCATION1_ID).stream()
+            .filter(p -> "Semicolon file on comma locale".equals(p.getText())).findFirst().orElseThrow();
+        Assert.assertEquals("Description; with a separator", saved.getDescription());
+        Assert.assertEquals(Instant.parse("2026-06-01T09:00:00Z"), saved.getVoteOpen());
+        Assert.assertEquals(Instant.parse("2026-06-02T17:00:00Z"), saved.getVoteClose());
+    }
+
+    @Test
+    public void testImportPollsFromCsvFallsBackToCommaDelimiterWhenFileIsCommaDelimited() {
+        Mockito.when(localeService.getLocaleForCurrentSiteAndUser()).thenReturn(Locale.forLanguageTag("es-ES"));
+        String csv = importCsvHeader(2) + "\n"
+            + "Comma delimited question,,site,,2026-06-01,09:00,2026-06-02,17:00,1,1,1,One,Two\n";
+
+        pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+        Assert.assertTrue(pollsService.findAllPolls(LOCATION1_ID).stream()
+            .anyMatch(p -> "Comma delimited question".equals(p.getText())));
+    }
+
+    @Test
+    public void testImportPollsFromCsvExpandsTwoDigitYearsAcrossLocales() {
+        for (Locale locale : List.of(Locale.UK, Locale.FRANCE, Locale.forLanguageTag("pt-BR"))) {
+            Mockito.when(localeService.getLocaleForCurrentSiteAndUser()).thenReturn(locale);
+            String question = "Localized years " + locale;
+            String csv = importCsvHeader(2) + "\n"
+                + question + ",,site,,01/06/26,09:00,02/06/2026,17:00,1,1,1,One,Two\n";
+
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+            Poll saved = pollsService.findAllPolls(LOCATION1_ID).stream()
+                .filter(p -> question.equals(p.getText())).findFirst().orElseThrow();
+            Assert.assertEquals(locale.toString(), Instant.parse("2026-06-01T09:00:00Z"), saved.getVoteOpen());
+            Assert.assertEquals(locale.toString(), Instant.parse("2026-06-02T17:00:00Z"), saved.getVoteClose());
+        }
+    }
+
+    @Test
+    public void testImportLocalizedSampleCsvCreatesImportablePoll() {
+        Locale spanish = Locale.forLanguageTag("es");
+        Mockito.when(localeService.getLocaleForCurrentSiteAndUser()).thenReturn(Locale.forLanguageTag("es-ES"));
+        // The header validation path resolves labels through pollsBundle, so point its mock at the same
+        // Spanish translations used to build the sample, then assert those real translations round-trip.
+        pollsBundleLocale.set(spanish);
+        String csv = pollsService.getPollImportSampleCsv(ResourceBundle.getBundle("bundle.polls", spanish)::getString)
+            .replace("What is your favorite color?", "Localized sample poll");
+        Assert.assertTrue(csv.startsWith("Pregunta;Descripción;"));
+
+        pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+        Poll saved = pollsService.findAllPolls(LOCATION1_ID).stream()
+            .filter(p -> "Localized sample poll".equals(p.getText())).findFirst().orElseThrow();
+        Assert.assertEquals(Instant.parse("2026-05-29T09:00:00Z"), saved.getVoteOpen());
+        Assert.assertEquals(Instant.parse("2026-05-30T17:00:00Z"), saved.getVoteClose());
+    }
+
+    @Test
+    public void testImportPollsFromCsvRejectsInvalidLocalizedDateWithoutRetryingDelimiter() {
+        Mockito.when(localeService.getLocaleForCurrentSiteAndUser()).thenReturn(Locale.forLanguageTag("es-ES"));
+        String csv = importCsvHeader(2).replace(',', ';') + "\n"
+            + "Invalid localized date;;site;;30/02/26;09:00;01/03/26;17:00;1;1;1;One;Two\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER));
+
+        Assert.assertEquals(PollImportError.INVALID_DATES, exception.getError());
+        Assert.assertEquals(2, exception.getRowNumber());
+        Assert.assertArrayEquals(new Object[] { "30/02/26" }, exception.getMessageArgs());
+    }
+
+    @Test
+    public void testImportPollsFromCsvHandlesAccessAndGroupIds() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+
+        String csv = importCsvHeader(2) + "\n"
+            + "Import access poll - valid group,Bulk import details,group,Group 1,2026-06-01,09:00,2026-06-02,17:00,1,1,1,Yes,No\n";
+
+        pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER);
+
+        Poll saved = pollsService.findAllPolls(LOCATION1_ID).stream()
+            .filter(p -> "Import access poll - valid group".equals(p.getText()))
+            .findFirst()
+            .orElseThrow();
+        Assert.assertNotNull(saved);
+        Assert.assertEquals(Poll.Access.GROUP, saved.getTypeOfAccess());
+        Assert.assertTrue(saved.getGroupIds().contains("g1"));
+    }
+
+    @Test
+    public void testSavePollRejectsInvalidGroupIds() {
+        Poll poll = new Poll();
+        poll.setCreationDate(Instant.now());
+        poll.setVoteOpen(Instant.now());
+        poll.setVoteClose(Instant.now().plus(1, ChronoUnit.DAYS));
+        poll.setDescription("this is some text");
+        poll.setText("group poll");
+        poll.setOwner(USER);
+        poll.setSiteId(LOCATION1_ID);
+        poll.setTypeOfAccess(Poll.Access.GROUP);
+        poll.setGroupIds(Set.of("foreign-group-id"));
+
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+        Assert.assertThrows(IllegalArgumentException.class, () -> pollsService.savePoll(poll));
+    }
+
+    @Test
+    public void testImportPollsFromCsvFailsWhenSomeGroupsMissing() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+
+        String csv = importCsvHeader(2) + "\n"
+            + "Import access poll - partial group,Bulk import details,group,\"Group 1,Missing Group\",2026-06-01,09:00,2026-06-02,17:00,1,1,1,Yes,No\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.INVALID_GROUPS, exception.getError());
+        // "Group 1" resolves fine and must not be reported as missing alongside "Missing Group"
+        Assert.assertArrayEquals(new Object[] { "Missing Group" }, exception.getMessageArgs());
+    }
+
+    @Test
+    public void testImportPollsFromCsvFailsWhenGroupMissing() {
+        Mockito.when(sessionManager.getCurrentSessionUserId()).thenReturn(USER);
+
+        String csv = importCsvHeader(2) + "\n"
+            + "Import access poll - missing group,Bulk import details,group,missing group,2026-06-01,09:00,2026-06-02,17:00,1,1,1,Yes,No\n";
+
+        PollImportException exception = Assert.assertThrows(PollImportException.class, () ->
+            pollsService.importPollsFromCsv(List.of(csv), LOCATION1_ID, USER)
+        );
+        Assert.assertEquals(PollImportError.INVALID_GROUPS, exception.getError());
+        Assert.assertArrayEquals(new Object[] { "missing group" }, exception.getMessageArgs());
+    }
+
+    // ========== Helper Methods ==========
+
+    private Vote createVoteForOption(Option option) {
+        Vote vote = new Vote();
+        vote.setIp("127.0.0.1");
+        vote.setUserId(USER);
+        vote.setVoteDate(Instant.now());
+        vote.setSubmissionId(USER + ":" + UUID.randomUUID());
+        vote.setOption(option);
+        return vote;
+    }
+
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@sakai-ui/sakai-document-viewer",
+  "version": "3.0.6",
+  "description": "The Sakai document viewing component",
+  "main": "index.js",
+  "module": "index.js",
+  "scripts": {
+    "lint:fix": "eslint src --fix",
+    "test": "wtr"
+  },
+  "files": [
+    "*.js",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sakaiproject/sakai",
+    "directory": "webcomponents/tool/src/main/frontend/packages/sakai-document-viewer"
+  },
+  "keywords": [
+    "sakai",
+    "document",
+    "viewer"
+  ],
+  "author": "The Sakai Project <sakai.user.interface@gmail.com>",
+  "license": "ECL-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/sakaiproject/sakai/tree/master/webcomponents/tool/src/main/frontend/packages/sakai-document-viewer#readme"
+}

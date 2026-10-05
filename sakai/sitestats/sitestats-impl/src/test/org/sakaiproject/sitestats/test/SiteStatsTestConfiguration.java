@@ -1,0 +1,428 @@
+/*
+ * Copyright (c) 2003-2021 The Apereo Foundation
+ *
+ * Licensed under the Educational Community License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *             http://opensource.org/licenses/ecl2
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.sakaiproject.sitestats.test;
+
+import static org.hibernate.cfg.Environment.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Properties;
+import java.util.Set;
+
+import javax.sql.DataSource;
+
+import org.hibernate.SessionFactory;
+import org.hibernate.dialect.HSQLDialect;
+import org.hsqldb.jdbcDriver;
+import org.sakaiproject.alias.api.AliasService;
+import org.sakaiproject.announcement.api.AnnouncementService;
+import org.sakaiproject.api.app.scheduler.ScheduledInvocationManager;
+import org.sakaiproject.api.app.scheduler.SchedulerManager;
+import org.sakaiproject.authz.api.AuthzGroupService;
+import org.sakaiproject.authz.api.FunctionManager;
+import org.sakaiproject.authz.api.SecurityService;
+import org.sakaiproject.calendar.api.CalendarService;
+import org.sakaiproject.component.api.ServerConfigurationService;
+import org.sakaiproject.content.api.ContentHostingService;
+import org.sakaiproject.content.api.ContentTypeImageService;
+import org.sakaiproject.db.api.SqlService;
+import org.sakaiproject.email.api.DigestService;
+import org.sakaiproject.entity.api.EntityManager;
+import org.sakaiproject.entitybroker.DeveloperHelperService;
+import org.sakaiproject.entitybroker.entityprovider.EntityProviderManager;
+import org.sakaiproject.event.api.EventTrackingService;
+import org.sakaiproject.event.api.LearningResourceStoreService;
+import org.sakaiproject.event.api.UsageSessionService;
+import org.sakaiproject.exception.IdUnusedException;
+import org.sakaiproject.lessonbuildertool.model.SimplePageToolDao;
+import org.sakaiproject.memory.api.MemoryService;
+import org.sakaiproject.site.api.SiteService;
+import org.sakaiproject.sitestats.api.StatsManager;
+import org.sakaiproject.sitestats.impl.report.ReportManagerImpl;
+import org.sakaiproject.sitestats.impl.view.SiteStatsChartMapper;
+import org.sakaiproject.sitestats.impl.view.SiteStatsReportSummaryMapper;
+import org.sakaiproject.sitestats.impl.view.SiteStatsReportViewMapper;
+import org.sakaiproject.sitestats.impl.view.SiteStatsTableMapperImpl;
+import org.sakaiproject.sitestats.impl.view.SiteStatsWidgetCatalogFactory;
+import org.sakaiproject.sitestats.impl.view.SiteStatsWidgetContext;
+import org.sakaiproject.sitestats.impl.view.SiteStatsWidgetDefinition;
+import org.sakaiproject.sitestats.impl.view.ViewFactoryFixtureWidgetDefinition;
+import org.sakaiproject.sitestats.test.data.FakeData;
+import org.sakaiproject.sitestats.test.mocks.FakeEntityManager;
+import org.sakaiproject.springframework.orm.hibernate.AdditionalHibernateMappings;
+import org.sakaiproject.time.api.TimeService;
+import org.sakaiproject.time.api.UserTimeService;
+import org.sakaiproject.tool.api.SessionManager;
+import org.sakaiproject.tool.api.Tool;
+import org.sakaiproject.tool.api.ToolManager;
+import org.sakaiproject.user.api.PreferencesService;
+import org.sakaiproject.user.api.UserDirectoryService;
+import org.sakaiproject.util.ResourceLoader;
+import org.sakaiproject.util.api.FormattedText;
+import org.sakaiproject.util.api.LinkMigrationHelper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.ImportResource;
+import org.springframework.context.annotation.PropertySource;
+import org.springframework.core.env.Environment;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.orm.hibernate5.HibernateTransactionManager;
+import org.springframework.orm.hibernate5.LocalSessionFactoryBuilder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+@Configuration
+@EnableTransactionManagement
+@ImportResource("classpath:/WEB-INF/components.xml")
+@PropertySource("classpath:/hibernate.properties")
+public class SiteStatsTestConfiguration {
+
+    @Autowired
+    private Environment environment;
+
+    @Autowired @Qualifier("org.sakaiproject.springframework.orm.hibernate.AdditionalHibernateMappings.sitestats")
+    private AdditionalHibernateMappings hibernateMappings;
+
+    static {
+        System.setProperty("sakai.tests.enabled", "true");
+    }
+
+    private final org.sakaiproject.sitestats.impl.view.SiteStatsSamigoLookup samigoLookupMock =
+            mock(org.sakaiproject.sitestats.impl.view.SiteStatsSamigoLookup.class);
+
+    @Bean(name = "org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory")
+    public SessionFactory sessionFactory(Properties hibernateProperties) throws IOException {
+        LocalSessionFactoryBuilder sfb = new LocalSessionFactoryBuilder(dataSource());
+        hibernateMappings.processAdditionalMappings(sfb);
+        sfb.addProperties(hibernateProperties);
+        return sfb.buildSessionFactory();
+    }
+
+    @Bean(name = "javax.sql.DataSource")
+    public DataSource dataSource() {
+        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        dataSource.setDriverClassName(environment.getProperty(DRIVER, jdbcDriver.class.getName()));
+        dataSource.setUrl(environment.getProperty(URL, "jdbc:hsqldb:mem:test"));
+        dataSource.setUsername(environment.getProperty(USER, "sa"));
+        dataSource.setPassword(environment.getProperty(PASS, ""));
+        return dataSource;
+    }
+
+    @Bean
+    public Properties hibernateProperties(Environment environment) {
+        Properties properties = new Properties();
+        properties.setProperty(DIALECT, environment.getProperty(DIALECT, HSQLDialect.class.getName()));
+        properties.setProperty(HBM2DDL_AUTO, environment.getProperty(HBM2DDL_AUTO));
+        properties.setProperty(ENABLE_LAZY_LOAD_NO_TRANS, environment.getProperty(ENABLE_LAZY_LOAD_NO_TRANS, "true"));
+        return properties;
+    }
+
+    @Bean(name = "org.sakaiproject.springframework.orm.hibernate.GlobalTransactionManager")
+    public PlatformTransactionManager transactionManager(SessionFactory sessionFactory) throws IOException {
+        HibernateTransactionManager txManager = new HibernateTransactionManager();
+        txManager.setSessionFactory(sessionFactory);
+        return txManager;
+    }
+
+    @Bean(name = "org.sakaiproject.alias.api.AliasService")
+    public AliasService aliasService() {
+        return mock(AliasService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.assignment.api.AssignmentService")
+    public org.sakaiproject.assignment.api.AssignmentService assignmentService() {
+        return mock(org.sakaiproject.assignment.api.AssignmentService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.grading.api.GradingService")
+    public org.sakaiproject.grading.api.GradingService gradingService() {
+        return mock(org.sakaiproject.grading.api.GradingService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.sitestats.impl.view.SiteStatsSamigoLookup")
+    public org.sakaiproject.sitestats.impl.view.SiteStatsSamigoLookup samigoLookup() {
+        return samigoLookupMock;
+    }
+
+    @Bean(name = "org.sakaiproject.announcement.api.AnnouncementService")
+    public AnnouncementService announcementService() {
+        return mock(AnnouncementService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.authz.api.AuthzGroupService")
+    public AuthzGroupService authzGroupService() {
+        return mock(AuthzGroupService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.calendar.api.CalendarService")
+    public CalendarService calendarService() {
+        return mock(CalendarService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.content.api.ContentHostingService")
+    public ContentHostingService contentHostingService() {
+        return mock(ContentHostingService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.content.api.ContentTypeImageService")
+    public ContentTypeImageService contentTypeImageService() {
+        ContentTypeImageService contentTypeImageService = mock(ContentTypeImageService.class);
+        when(contentTypeImageService.getContentTypeImage("folder")).thenReturn("sakai/folder.gif");
+        when(contentTypeImageService.getContentTypeImage("image/png")).thenReturn("sakai/image.gif");
+        return contentTypeImageService;
+    }
+
+    @Bean(name = "org.sakaiproject.sitestats.test.DB")
+    public DB db(SessionFactory sessionFactory) throws IOException {
+        DB db = new DB();
+        db.setSessionFactory(sessionFactory);
+        return db;
+    }
+
+    @Bean(name = "org.sakaiproject.entitybroker.DeveloperHelperService")
+    public DeveloperHelperService developerHelperService() {
+        return mock(DeveloperHelperService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.email.api.DigestService")
+    public DigestService digestService() {
+        return mock(DigestService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.entity.api.EntityManager")
+    public EntityManager entityManager() {
+        return spy(FakeEntityManager.class);
+    }
+
+    @Bean(name = "org.sakaiproject.entitybroker.entityprovider.EntityProviderManager")
+    public EntityProviderManager entityProviderManager() {
+        return mock(EntityProviderManager.class);
+    }
+
+    @Bean(name = "org.sakaiproject.event.api.EventTrackingService")
+    public EventTrackingService eventTrackingService() {
+        return mock(EventTrackingService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.util.api.FormattedText")
+    public FormattedText formattedText() {
+        return mock(FormattedText.class);
+    }
+
+    @Bean(name = "org.sakaiproject.authz.api.FunctionManager")
+    public FunctionManager functionManager() {
+        return mock(FunctionManager.class);
+    }
+
+    @Bean(name = "org.sakaiproject.event.api.LearningResourceStoreService")
+    public LearningResourceStoreService learningResourceStoreService() {
+        return mock(LearningResourceStoreService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.util.api.LinkMigrationHelper")
+    public LinkMigrationHelper linkMigrationHelper() {
+        return mock(LinkMigrationHelper.class);
+    }
+
+    @Bean(name = "org.sakaiproject.memory.api.MemoryService")
+    public MemoryService memoryService() {
+        MemoryService memoryService = new org.sakaiproject.memory.mock.MemoryService();
+        return memoryService;
+    }
+
+    @Bean(name = "org.sakaiproject.user.api.PreferencesService")
+    public PreferencesService preferencesService() {
+        return mock(PreferencesService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.util.ResourceLoader.sitestats")
+    public ResourceLoader resourceLoader() {
+        ResourceLoader resourceLoader = mock(ResourceLoader.class);
+        when(resourceLoader.getLocale()).thenReturn(java.util.Locale.US);
+        when(resourceLoader.getString(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(resourceLoader.getFormattedMessage(anyString(), any())).thenAnswer(invocation -> {
+            String key = invocation.getArgument(0);
+            Object[] allArgs = invocation.getArguments();
+            Object[] formatArgs;
+            if (allArgs.length == 2 && allArgs[1] instanceof Object[]) {
+                formatArgs = (Object[]) allArgs[1];
+            } else {
+                formatArgs = java.util.Arrays.copyOfRange(allArgs, 1, allArgs.length);
+            }
+            return java.text.MessageFormat.format(resourceLoader.getString(key), formatArgs);
+        });
+        when(resourceLoader.getString("overview_title_grades_below_threshold"))
+                .thenReturn("Students below {0}% on graded work");
+        when(resourceLoader.getString("overview_help_grades_below_threshold"))
+                .thenReturn("Students whose earned/possible points on graded, non-excused Gradebook work are below {0}%. Students without grades are excluded. Covers all time.");
+        when(resourceLoader.getString("report_content_attachments")).thenReturn("Attachments");
+        when(resourceLoader.getString("report_what_visits")).thenReturn("Visits");
+        when(resourceLoader.getString("report_when_all")).thenReturn("All");
+        when(resourceLoader.getString("report_who_all")).thenReturn("All");
+        when(resourceLoader.getString("th_site")).thenReturn("Site");
+        when(resourceLoader.getString("th_id")).thenReturn("User ID");
+        when(resourceLoader.getString("th_user")).thenReturn("name");
+        when(resourceLoader.getString("th_total")).thenReturn("Total");
+        when(resourceLoader.getString("th_visits")).thenReturn("Visits");
+        when(resourceLoader.getString("th_uniquevisitors")).thenReturn("Unique visitors");
+        return resourceLoader;
+    }
+
+    @Bean
+    public BeanPostProcessor siteStatsResourceLoaderPostProcessor(ResourceLoader resourceLoader) {
+        return new InstantiationAwareBeanPostProcessor() {
+            @Override
+            public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) throws BeansException {
+                if (org.sakaiproject.sitestats.impl.view.SiteStatsSamigoLookupImpl.class.equals(beanClass)) {
+                    return samigoLookupMock;
+                }
+                return null;
+            }
+
+            @Override
+            public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
+                if (bean instanceof ReportManagerImpl) {
+                    ((ReportManagerImpl) bean).setResourceLoader(resourceLoader);
+                } else if (bean instanceof SiteStatsReportViewMapper) {
+                    ((SiteStatsReportViewMapper) bean).setMessages(resourceLoader);
+                } else if (bean instanceof SiteStatsTableMapperImpl) {
+                    ((SiteStatsTableMapperImpl) bean).setMessages(resourceLoader);
+                } else if (bean instanceof SiteStatsChartMapper) {
+                    ((SiteStatsChartMapper) bean).setMessages(resourceLoader);
+                } else if (bean instanceof SiteStatsReportSummaryMapper) {
+                    ((SiteStatsReportSummaryMapper) bean).setMessages(resourceLoader);
+                } else if (bean instanceof SiteStatsWidgetContext) {
+                    ((SiteStatsWidgetContext) bean).setMessages(resourceLoader);
+                } else if (bean instanceof SiteStatsWidgetCatalogFactory) {
+                    SiteStatsWidgetCatalogFactory factory = (SiteStatsWidgetCatalogFactory) bean;
+                    List<SiteStatsWidgetDefinition> definitions = new ArrayList<>(factory.getWidgetDefinitions());
+                    definitions.add(new ViewFactoryFixtureWidgetDefinition());
+                    factory.setWidgetDefinitions(definitions);
+                } else if (bean instanceof org.sakaiproject.sitestats.impl.view.SiteStatsSubmissionsAnalytics) {
+                    ((org.sakaiproject.sitestats.impl.view.SiteStatsSubmissionsAnalytics) bean)
+                            .setSamigoLookup(samigoLookupMock);
+                }
+                return bean;
+            }
+        };
+    }
+
+    @Bean(name = "org.sakaiproject.api.app.scheduler.ScheduledInvocationManager")
+    public ScheduledInvocationManager scheduledInvocationManager() {
+        return mock(ScheduledInvocationManager.class);
+    }
+
+    @Bean(name = "org.sakaiproject.api.app.scheduler.SchedulerManager")
+    public SchedulerManager schedulerManager() {
+        return mock(SchedulerManager.class);
+    }
+
+    @Bean(name = "org.sakaiproject.authz.api.SecurityService")
+    public SecurityService securityService() {
+        return mock(SecurityService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.component.api.ServerConfigurationService")
+    public ServerConfigurationService serverConfigurationService() {
+        ServerConfigurationService scs = mock(ServerConfigurationService.class);
+        when(scs.getString("sitestats.db", "internal")).thenReturn("internal");
+        when(scs.getString("hibernate.dialect", "org.hibernate.dialect.HSQLDialect")).thenReturn("org.hibernate.dialect.HSQLDialect");
+        when(scs.getBoolean("auto.ddl", true)).thenReturn(true);
+        when(scs.getBoolean("display.users.present", true)).thenReturn(true);
+        when(scs.getBoolean("presence.events.log", true)).thenReturn(true);
+        when(scs.getServerUrl()).thenReturn("http://localhost:8080");
+        return scs;
+    }
+
+    @Bean(name = "org.sakaiproject.tool.api.SessionManager")
+    public SessionManager sessionManager() {
+        return mock(SessionManager.class);
+    }
+
+    @Bean(name = "org.sakaiproject.lessonbuildertool.model.SimplePageToolDao")
+    public SimplePageToolDao simplePageToolDao() {
+        return mock(SimplePageToolDao.class);
+    }
+
+    @Bean(name = "org.sakaiproject.db.api.SqlService")
+    public SqlService sqlService() {
+        return mock(SqlService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.site.api.SiteService")
+    public SiteService siteService() throws IdUnusedException {
+        SiteService siteService = mock(SiteService.class);
+        when(siteService.getSite(null)).thenThrow(new IdUnusedException("null"));
+        when(siteService.getSite("non_existent_site")).thenThrow(new IdUnusedException("non_existent_site"));
+        when(siteService.isUserSite("non_existent_site")).thenReturn(false);
+        when(siteService.isSpecialSite("non_existent_site")).thenReturn(false);
+
+        return siteService;
+    }
+
+    @Bean(name = "org.sakaiproject.time.api.TimeService")
+    public TimeService timeService() {
+        return mock(TimeService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.tool.api.ToolManager")
+    public ToolManager toolManager() {
+        ToolManager toolManager = mock(ToolManager.class);
+        Tool chatTool = mock(Tool.class);
+        when(chatTool.getId()).thenReturn(FakeData.TOOL_CHAT);
+        Tool resourcesTool = mock(Tool.class);
+        when(resourcesTool.getId()).thenReturn(StatsManager.RESOURCES_TOOLID);
+        Set<Tool> tools = new HashSet<>(Arrays.asList(chatTool, resourcesTool));
+        when(toolManager.findTools(null, null)).thenReturn(tools);
+        when(toolManager.findTools(Collections.EMPTY_SET, null)).thenReturn(tools);
+        when(toolManager.findTools(Collections.emptySet(), null)).thenReturn(tools);
+        when(toolManager.getTool(FakeData.TOOL_CHAT)).thenReturn(chatTool);
+        when(toolManager.getTool(StatsManager.RESOURCES_TOOLID)).thenReturn(resourcesTool);
+        return toolManager;
+    }
+
+    @Bean(name = "org.sakaiproject.user.api.UserDirectoryService")
+    public UserDirectoryService userDirectoryService() {
+        return mock(UserDirectoryService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.event.api.UsageSessionService")
+    public UsageSessionService usageSessionService() {
+        return mock(UsageSessionService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.time.api.UserTimeService")
+    public UserTimeService userTimeService() {
+        UserTimeService userTimeService = mock(UserTimeService.class);
+        when(userTimeService.getLocalTimeZone()).thenReturn(java.util.TimeZone.getTimeZone("America/New_York"));
+        return userTimeService;
+    }
+
+}

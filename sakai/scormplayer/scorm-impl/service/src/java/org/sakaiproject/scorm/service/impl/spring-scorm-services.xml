@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+	<bean id="org.sakaiproject.scorm.service.api.ScormApplicationService"
+		  class="org.sakaiproject.scorm.service.impl.ScormApplicationServiceImpl">
+		<property name="scormSequencingService" ref="org.sakaiproject.scorm.service.api.ScormSequencingService"/>
+		<property name="adlManager" ref="org.sakaiproject.scorm.adl.ADLConsultant"/>
+		<property name="attemptDao" ref="org.sakaiproject.scorm.dao.api.AttemptDao"/>
+		<property name="dataManagerDao" ref="org.sakaiproject.scorm.dao.api.DataManagerDao"/>
+		<property name="gradingService" ref="org.sakaiproject.grading.api.GradingService"/>
+		<property name="learnerDao" ref="org.sakaiproject.scorm.dao.LearnerDao"/>
+		<property name="lms" ref="org.sakaiproject.scorm.service.api.LearningManagementSystem"/>
+	</bean>
+
+	<bean id="org.sakaiproject.scorm.service.api.ScormResultService"
+		  class="org.sakaiproject.scorm.service.impl.ScormResultServiceImpl">
+		<property name="lms" ref="org.sakaiproject.scorm.service.api.LearningManagementSystem"/>
+		<property name="attemptDao" ref="org.sakaiproject.scorm.dao.api.AttemptDao"/>
+		<property name="dataManagerDao" ref="org.sakaiproject.scorm.dao.api.DataManagerDao"/>
+		<property name="learnerDao" ref="org.sakaiproject.scorm.dao.LearnerDao"/>
+		<property name="localeService" ref="org.sakaiproject.util.api.LocaleService"/>
+	</bean>
+
+	<bean id="org.sakaiproject.scorm.service.api.ScormContentService"
+		  class="org.sakaiproject.scorm.service.impl.ScormContentServiceImpl">
+		<property name="lms" ref="org.sakaiproject.scorm.service.api.LearningManagementSystem"/>
+		<property name="resourceService" ref="org.sakaiproject.scorm.service.api.ScormResourceService"/>
+		<property name="contentPackageDao" ref="org.sakaiproject.scorm.dao.api.ContentPackageDao"/>
+		<property name="contentPackageManifestDao" ref="org.sakaiproject.scorm.dao.api.ContentPackageManifestDao"/>
+		<property name="dataManagerDao" ref="org.sakaiproject.scorm.dao.api.DataManagerDao"/>
+		<property name="learnerDao" ref="org.sakaiproject.scorm.dao.LearnerDao"/>
+		<property name="serverConfigurationService" ref="org.sakaiproject.component.api.ServerConfigurationService"/>
+	</bean>
+
+	<bean id="org.sakaiproject.scorm.service.api.ScormSequencingService"
+		  class="org.sakaiproject.scorm.service.impl.ScormSequencingServiceImpl">
+		<property name="lms" ref="org.sakaiproject.scorm.service.api.LearningManagementSystem"/>
+		<property name="scormContentService" ref="org.sakaiproject.scorm.service.api.ScormContentService"/>
+		<property name="adlManager" ref="org.sakaiproject.scorm.adl.ADLConsultant"/>
+		<property name="activityTreeHolderDao" ref="org.sakaiproject.scorm.dao.api.ActivityTreeHolderDao"/>
+		<property name="attemptDao" ref="org.sakaiproject.scorm.dao.api.AttemptDao"/>
+		<property name="dataManagerDao" ref="org.sakaiproject.scorm.dao.api.DataManagerDao"/>
+	</bean>
+
+	<bean id="org.sakaiproject.scorm.service.launch.ScormLaunchSessionRegistry"
+	    class="org.sakaiproject.scorm.service.impl.ScormLaunchSessionRegistry">
+		<property name="entryTtl" value="PT2H" />
+	</bean>
+
+	<bean id="org.sakaiproject.scorm.service.api.ScormLaunchService"
+	    class="org.sakaiproject.scorm.service.impl.ScormLaunchServiceImpl">
+		<property name="sessionRegistry" ref="org.sakaiproject.scorm.service.launch.ScormLaunchSessionRegistry" />
+		<property name="sequencingService" ref="org.sakaiproject.scorm.service.api.ScormSequencingService" />
+		<property name="resultService" ref="org.sakaiproject.scorm.service.api.ScormResultService" />
+		<property name="scormContentService" ref="org.sakaiproject.scorm.service.api.ScormContentService" />
+		<property name="resourceService" ref="org.sakaiproject.scorm.service.api.ScormResourceService" />
+		<property name="scormApplicationService" ref="org.sakaiproject.scorm.service.api.ScormApplicationService" />
+		<property name="learningManagementSystem" ref="org.sakaiproject.scorm.service.api.LearningManagementSystem" />
+		<property name="sessionManager" ref="org.sakaiproject.tool.api.SessionManager" />
+	</bean>
+
+	<!-- The SCORM entity producer lives in its own file so the test can load the same wiring -->
+	<import resource="classpath:org/sakaiproject/scorm/service/impl/spring-scorm-entityproducer.xml" />
+</beans>

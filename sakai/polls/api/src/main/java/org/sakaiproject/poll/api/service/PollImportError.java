@@ -1,0 +1,41 @@
+/**********************************************************************************
+ * Copyright (c) 2026 The Apereo Foundation
+ *
+ * Licensed under the Educational Community License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://opensource.org/licenses/ECL-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ **********************************************************************************/
+
+package org.sakaiproject.poll.api.service;
+
+public enum PollImportError {
+
+    WRONG_FORMAT("poll_import_error_wrongformat"),
+    INVALID_HEADER("poll_import_error_header"),
+    MISSING_QUESTION("poll_import_error_question"),
+    TOO_FEW_OPTIONS("poll_import_error_options"),
+    INVALID_ACCESS("poll_import_error_access"),
+    INVALID_DATES("poll_import_error_dates"),
+    INVALID_DATE_ORDER("poll_import_error_date_order"),
+    INVALID_NUMBER("poll_import_error_number"),
+    INVALID_DISPLAY_RESULT("poll_import_error_display"),
+    INVALID_LIMITS("poll_import_error_limits"),
+    INVALID_GROUPS("poll_import_error_groups");
+    private final String messageKey;
+
+    PollImportError(String messageKey) {
+        this.messageKey = messageKey;
+    }
+
+    public String getMessageKey() {
+        return messageKey;
+    }
+}

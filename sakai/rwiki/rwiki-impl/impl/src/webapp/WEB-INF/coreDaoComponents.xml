@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns="http://www.springframework.org/schema/beans"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <bean id="rwikiCurrentObjectDao"
+          class="uk.ac.cam.caret.sakai.rwiki.component.dao.impl.RWikiCurrentObjectDaoImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+        <property name="contentDAO" ref="rwikiCurrentObjectContentDaoImpl"/>
+        <property name="historyDAO" ref="rwikiHistoryObjectDao"/>
+    </bean>
+
+    <bean id="rwikiCurrentObjectContentDaoImpl"
+          class="uk.ac.cam.caret.sakai.rwiki.component.dao.impl.RWikiCurrentObjectContentDaoImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+    <bean id="rwikiHistoryObjectDao"
+          class="uk.ac.cam.caret.sakai.rwiki.component.dao.impl.RWikiHistoryObjectDaoImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+        <property name="contentDAO" ref="rwikiHistoryObjectContentDaoImpl"/>
+    </bean>
+
+    <bean id="rwikiHistoryObjectContentDaoImpl"
+          class="uk.ac.cam.caret.sakai.rwiki.component.dao.impl.RWikiHistoryObjectContentDaoImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+    <bean id="rwikiPropertyDao"
+          class="uk.ac.cam.caret.sakai.rwiki.component.dao.impl.RWikiPropertyDaoImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+</beans>

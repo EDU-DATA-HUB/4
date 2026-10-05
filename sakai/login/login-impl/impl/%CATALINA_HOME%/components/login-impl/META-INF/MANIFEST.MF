@@ -1,0 +1,5 @@
+Manifest-Version: 1.0
+Created-By: Apache Maven
+Built-By: Aesop
+Build-Jdk: 17.0.20.1
+

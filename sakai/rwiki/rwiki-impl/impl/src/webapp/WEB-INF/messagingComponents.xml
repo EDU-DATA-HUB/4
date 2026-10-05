@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns="http://www.springframework.org/schema/beans"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!-- components context -->
+    <bean id="uk.ac.cam.caret.sakai.rwiki.service.message.api.PreferenceService"
+          class="uk.ac.cam.caret.sakai.rwiki.component.message.PreferenceServiceImpl">
+        <property name="preferenceDao" ref="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.PreferenceDao"/>
+    </bean>
+
+    <!-- Service for creating commands in URL Processing -->
+    <bean id="uk.ac.cam.caret.sakai.rwiki.service.message.api.MessageService"
+          class="uk.ac.cam.caret.sakai.rwiki.component.message.MessageServiceImpl">
+        <property name="messageDao" ref="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.MessageDao"/>
+        <property name="pagePresenceDao" ref="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.PagePresenceDao"/>
+    </bean>
+    <!-- Triggers fired on actions -->
+    <bean id="uk.ac.cam.caret.sakai.rwiki.service.message.api.TriggerService"
+          class="uk.ac.cam.caret.sakai.rwiki.component.message.TriggerServiceImpl">
+        <property name="triggerDao" ref="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.TriggerDao"/>
+        <property name="triggerHandlers">
+            <map>
+                <entry key="xxx" value="yyy"/>
+            </map>
+        </property>
+    </bean>
+
+    <!-- Message DAO  -->
+    <bean id="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.MessageDao"
+          class="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.MessageDaoImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+    <!-- PagePresence DAO  -->
+    <bean id="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.PagePresenceDao"
+          class="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.PagePresenceDaoImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+    <!-- Prefernce DAO  -->
+    <bean id="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.PreferenceDao"
+          class="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.PreferenceDaoImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+    <!-- Trigger DAO  -->
+    <bean id="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.TriggerDao"
+          class="uk.ac.cam.caret.sakai.rwiki.component.message.dao.impl.TriggerDaoImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+</beans>    

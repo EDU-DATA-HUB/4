@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xmlns="http://www.springframework.org/schema/beans"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+                           http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd
+                           http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+                           http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
+
+	<context:component-scan base-package="org.sakaiproject.lti"/>
+    <tx:annotation-driven transaction-manager="org.sakaiproject.springframework.orm.hibernate.GlobalTransactionManager"/>
+
+    <bean id="ltiHibernateMappings"
+        class="org.sakaiproject.springframework.orm.hibernate.impl.AdditionalHibernateMappingsImpl">
+        <property name="annotatedClasses">
+            <list>
+                <value>org.sakaiproject.lti.api.model.LtiContent</value>
+                <value>org.sakaiproject.lti.api.model.LtiMembershipsJob</value>
+                <value>org.sakaiproject.lti.api.model.LtiTool</value>
+                <value>org.sakaiproject.lti.api.model.LtiToolSite</value>
+            </list>
+        </property>
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.repository.LtiContentRepository"
+            class="org.sakaiproject.lti.impl.repository.LtiContentRepositoryImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.repository.LtiMembershipsJobRepository"
+            class="org.sakaiproject.lti.impl.repository.LtiMembershipsJobRepositoryImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.repository.LtiToolRepository"
+            class="org.sakaiproject.lti.impl.repository.LtiToolRepositoryImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.repository.LtiToolSiteRepository"
+            class="org.sakaiproject.lti.impl.repository.LtiToolSiteRepositoryImpl">
+        <property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.LTIToolPermissionService"
+            class="org.sakaiproject.lti.impl.LTIToolPermissionServiceImpl">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.service.LTISecurityService"
+            class="org.sakaiproject.lti.impl.LTISecurityServiceImpl"
+            init-method="init"
+            destroy-method="destroy">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.SakaiAccessTokenService"
+            class="org.sakaiproject.lti.impl.SakaiAccessTokenServiceImpl"
+            init-method="init"
+            destroy-method="destroy">
+    </bean>
+
+    <bean id="org.sakaiproject.util.ResourceLoader.ltiservice"
+        class="org.sakaiproject.util.ResourceLoader">
+        <constructor-arg value="ltiservice"/>
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.LTIService"
+		class="org.sakaiproject.lti.impl.LTIServiceImpl"
+		init-method="init"
+		destroy-method="destroy">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.UserFinderOrCreator"
+            class="org.sakaiproject.lti.impl.UserFinderOrCreatorImpl">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.SiteEmailPreferenceSetter"
+            class="org.sakaiproject.lti.impl.SiteEmailPreferenceSetterImpl">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.UserLocaleSetter"
+            class="org.sakaiproject.lti.impl.UserLocaleSetterImpl">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.UserPictureSetter"
+            class="org.sakaiproject.lti.impl.UserPictureSetterImpl">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.LTIRoleMapper"
+            class="org.sakaiproject.lti.impl.LTIRoleMapperImpl">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.SiteMembershipUpdater"
+            class="org.sakaiproject.lti.impl.SiteMembershipUpdaterImpl">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.SiteMembershipsSynchroniser"
+            class="org.sakaiproject.lti.impl.SiteMembershipsSynchroniserImpl">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.impl.jobs.SiteMembershipsSyncJob"
+            class="org.sakaiproject.lti.impl.jobs.SiteMembershipsSyncJob">
+    </bean>
+
+    <bean id="org.sakaiproject.api.app.scheduler.JobBeanWrapper.ltiSiteMemberships"
+            class="org.sakaiproject.component.app.scheduler.jobs.SpringStatefulJobBeanWrapper"
+            init-method="init">
+        <property name="beanId"><value>org.sakaiproject.lti.impl.jobs.SiteMembershipsSyncJob</value></property>
+        <property name="jobName"><value>Synchronise LTI Site Memberships</value></property>
+        <property name="schedulerManager"><ref bean="org.sakaiproject.api.app.scheduler.SchedulerManager" /></property>
+    </bean>
+
+    <bean id="org.sakaiproject.api.app.scheduler.JobBeanWrapper.LTIReportingJob"
+          class="org.sakaiproject.component.app.scheduler.jobs.SpringConfigurableJobBeanWrapper"
+          init-method="init">
+        <property name="beanId" value="org.sakaiproject.lti.impl.LTIReportingJob" />
+        <property name="jobName" value="LTI Addition Reporting" />
+        <property name="resourceBundleBase" value="org.sakaiproject.lti.impl.LTIReportingJob"/>
+        <property name="configurableJobProperties">
+            <set>
+                <bean class="org.sakaiproject.component.app.scheduler.jobs.SpringConfigurableJobProperty">
+                    <property name="required" value="true"/>
+                    <property name="labelResourceKey" value="to"/>
+                    <property name="descriptionResourceKey" value="to.description"/>
+                    <property name="defaultValue" value="user@example.com"/>
+                </bean>
+                <bean class="org.sakaiproject.component.app.scheduler.jobs.SpringConfigurableJobProperty">
+                    <property name="required" value="true"/>
+                    <property name="labelResourceKey" value="from"/>
+                    <property name="descriptionResourceKey" value="from.description"/>
+                    <property name="defaultValue" value="sender@example.com"/>
+                </bean>
+                <bean class="org.sakaiproject.component.app.scheduler.jobs.SpringConfigurableJobProperty">
+                    <property name="required" value="true"/>
+                    <property name="labelResourceKey" value="period"/>
+                    <property name="descriptionResourceKey" value="period.description"/>
+                    <property name="defaultValue" value="86400000"/>
+                </bean>
+                <bean class="org.sakaiproject.component.app.scheduler.jobs.SpringConfigurableJobProperty">
+                    <property name="required" value="true"/>
+                    <property name="labelResourceKey" value="toolId"/>
+                    <property name="descriptionResourceKey" value="toolId.description"/>
+                    <property name="defaultValue" value=""/>
+                </bean>
+            </set>
+        </property>
+        <property name="schedulerManager" ref="org.sakaiproject.api.app.scheduler.SchedulerManager" />
+    </bean>
+
+    <bean id="org.sakaiproject.lti.impl.LTIReportingJob" class="org.sakaiproject.lti.impl.LTIReportingJob">
+    </bean>
+
+    <bean id="org.sakaiproject.lti.api.LTIExportService"
+            class="org.sakaiproject.lti.impl.LTIExportServiceImpl"
+            init-method="init">
+    </bean>
+</beans>

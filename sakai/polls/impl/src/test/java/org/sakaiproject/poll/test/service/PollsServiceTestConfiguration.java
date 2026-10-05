@@ -1,0 +1,111 @@
+/*
+ * Copyright (c) 2003-2026 The Apereo Foundation
+ *
+ * Licensed under the Educational Community License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *             http://opensource.org/licenses/ecl2
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.sakaiproject.poll.test.service;
+
+import org.mockito.Mockito;
+import org.sakaiproject.api.app.scheduler.SchedulerManager;
+import org.sakaiproject.authz.api.AuthzGroupService;
+import org.sakaiproject.email.api.EmailService;
+import org.sakaiproject.emailtemplateservice.api.EmailTemplateService;
+import org.sakaiproject.entitybroker.DeveloperHelperService;
+import org.sakaiproject.event.api.LearningResourceStoreService;
+import org.sakaiproject.event.api.UsageSessionService;
+import org.sakaiproject.lti.api.LTIService;
+import org.sakaiproject.springframework.orm.hibernate.AdditionalHibernateMappings;
+import org.sakaiproject.test.SakaiTestConfiguration;
+import org.sakaiproject.time.api.UserTimeService;
+import org.sakaiproject.util.api.FormattedText;
+import org.sakaiproject.util.api.LinkMigrationHelper;
+import org.sakaiproject.util.api.LocaleService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.ImportResource;
+import org.springframework.context.annotation.PropertySource;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+@Configuration
+@EnableTransactionManagement
+@ImportResource("classpath:/WEB-INF/components.xml")
+@PropertySource("classpath:/hibernate.properties")
+public class PollsServiceTestConfiguration extends SakaiTestConfiguration {
+
+    @Autowired
+    @Qualifier("org.sakaiproject.springframework.orm.hibernate.AdditionalHibernateMappings.poll")
+    private AdditionalHibernateMappings additionalHibernateMappings;
+
+    @Override
+    protected AdditionalHibernateMappings getAdditionalHibernateMappings() {
+        return additionalHibernateMappings;
+    }
+
+    @Bean(name = "org.sakaiproject.util.api.FormattedText")
+    public FormattedText formattedText() {
+        return Mockito.mock(FormattedText.class);
+    }
+
+    @Bean(name = "org.sakaiproject.util.api.LocaleService")
+    public LocaleService localeService() {
+        return Mockito.mock(LocaleService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.api.app.scheduler.SchedulerManager")
+    public SchedulerManager schedulerManager() {
+        return Mockito.mock(SchedulerManager.class);
+    }
+
+    @Bean(name = "org.sakaiproject.email.api.EmailService")
+    public EmailService emailService() {
+        return Mockito.mock(EmailService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.time.api.UserTimeService")
+    public UserTimeService userTimeService() {
+        return Mockito.mock(UserTimeService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.entitybroker.DeveloperHelperService")
+    public DeveloperHelperService developerHelperService() {
+        return Mockito.mock(DeveloperHelperService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.event.api.LearningResourceStoreService")
+    public LearningResourceStoreService learningResourceStoreService() {
+        return Mockito.mock(LearningResourceStoreService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.emailtemplateservice.api.EmailTemplateService")
+    public EmailTemplateService emailTemplateService() {
+        return Mockito.mock(EmailTemplateService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.lti.api.LTIService")
+    public LTIService ltiService() {
+        return Mockito.mock(LTIService.class);
+    }
+
+    @Bean(name = "org.sakaiproject.util.api.LinkMigrationHelper")
+    public LinkMigrationHelper linkMigrationHelper() {
+        return Mockito.mock(LinkMigrationHelper.class);
+    }
+
+    @Bean(name = "org.sakaiproject.event.api.UsageSessionService")
+    public UsageSessionService usageSessionService() {
+        return Mockito.mock(UsageSessionService.class);
+    }
+
+}

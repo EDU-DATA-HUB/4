@@ -1,0 +1,5 @@
+# Extracted / generated local runtime — never commit.
+# Obtain via offline-kit + setup.cmd (see ../offline-kit/README.md).
+
+*
+!.gitignore

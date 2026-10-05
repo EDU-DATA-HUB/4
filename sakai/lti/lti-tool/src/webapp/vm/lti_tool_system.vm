@@ -1,0 +1,156 @@
+
+<title>LTI tools</title>
+
+	<!-- jQuery -->
+${includeLatestJQuery}
+
+<script src="/library/webjars/jquery-ui/1.12.1/jquery-ui.min.js"></script>
+<link type="text/css" href="/library/webjars/jquery-ui/1.12.1/jquery-ui.min.css" rel="stylesheet" media="screen" />
+
+    <script>includeWebjarLibrary('datatables');</script>
+    <!-- Tablesorter: required -->
+    <script>includeWebjarLibrary('jquery.tablesorter/2.27.7/dist/css/theme.blue.min.css');</script>
+    <script>includeWebjarLibrary('jquery.tablesorter');</script>
+
+	<script id="js">
+		document.addEventListener('DOMContentLoaded', function() {
+			const table = document.getElementById('tools_system');
+			if (!table) return;
+
+			new DataTable(table, {
+				titleRow: 0,
+				pageLength: 50,
+				lengthMenu: [[10, 50, 100, 200], [10, 50, 100, 200]],
+				#if ($isAdmin)
+				order: [[5, 'asc']],
+				#else
+				order: [[0, 'asc']],
+				#end
+				columnDefs: [{ targets: 'no-sort', orderable: false, searchable: false }],
+				initComplete: function() {
+					const dataTable = this.api();
+
+					document.querySelectorAll('#tools_system thead .sakai-datatables-filter-row input[data-column]').forEach(input => {
+						const column = dataTable.column(Number(input.dataset.column));
+
+						input.addEventListener('input', function() {
+							if (column.search() !== this.value) {
+								column.search(this.value).draw();
+							}
+						});
+					});
+				}
+			});
+		});
+</script>
+<div class="portletBody">
+	<ul class="navIntraTool actionToolBar">
+		<li class="firstToolBarItem"><span class="current">$tlang.getString("tool.in.system")</span></li>
+		<li><span><a href="" title="$tlang.getString("tool.in.site")" onclick="location = '$sakai_ActionURL.setPanel("ToolSite")';return false;"> $tlang.getString("tool.in.site")</a></span></li>
+	</ul>
+	#if ($messageSuccess)<div class="sak-banner-success">$tlang.getString("gen.success") $formattedText.escapeHtml($messageSuccess)</div>#end
+	#if ($alertMessage)<div class="sak-banner-error">$tlang.getString("gen.alert") $formattedText.escapeHtml($alertMessage)</div>#end
+        #if ($configMessage)<div class="sak-banner-error">$tlang.getString("gen.alert") $formattedText.escapeHtml($configMessage)</div>#end
+	#if ($isAdmin || $allowMaintainerAddSystemTool)
+		<div align="right" style="padding:10px">
+			<a href="" class="btn btn-primary" title="$tlang.getString("add.to.system.insert.new")" onclick="location = '$sakai_ActionURL.setPanel("ToolInsert")';return false;"> $tlang.getString("add.to.system.insert.new")</a>
+		</div>
+	#end
+	<br/>
+        <div class="p-2">
+	#if ($!ltiTools && $ltiTools.size() > 0 )
+		$tlang.getString("tool.description.system")
+		<br/>
+		<table id="tools_system" class="table table-striped table-hover" cellspacing="0" summary ="$tlang.getString("tool.table")">
+			<thead>
+	        <tr>
+                <th id="title" data-placeholder="$tlang.getString('search.title')">$tlang.getString("bl_title")</th>
+                <th id="launch" data-placeholder="$tlang.getString('search.url')">$tlang.getString("bl_launch")</th>
+                <th id="site_id" data-placeholder="$tlang.getString('search.siteid')">$tlang.getString("bl_site")</th>
+                #if ($isAdmin) <th id="use" data-placeholder="$tlang.getString('search.uses')">$tlang.getString("bl_use")</th> #end
+				#if ($isAdmin) <th id="tool_deployment" data-placeholder="$tlang.getString('search.deployment')">$tlang.getString("bl_deployment")</th>#end
+                #if ($isAdmin) <th id="toolorder" class="no-sort">$tlang.getString("bl_toolorder")</th> #end
+                #if ($isAdmin || $allowMaintainerAddSystemTool) <th id="action" class="no-sort">$tlang.getString("bl_action")</th>#end
+	        </tr>
+			<tr class="sakai-datatables-filter-row">
+				<td><input class="form-control form-control-sm" data-column="0" placeholder="$tlang.getString('search.title')" aria-label="$tlang.getString('search.title')" /></td>
+				<td><input class="form-control form-control-sm" data-column="1" placeholder="$tlang.getString('search.url')" aria-label="$tlang.getString('search.url')" /></td>
+				<td><input class="form-control form-control-sm" data-column="2" placeholder="$tlang.getString('search.siteid')" aria-label="$tlang.getString('search.siteid')" /></td>
+				#if ($isAdmin) <td><input class="form-control form-control-sm" data-column="3" placeholder="$tlang.getString('search.uses')" aria-label="$tlang.getString('search.uses')" /></td> #end
+				#if ($isAdmin) <td><input class="form-control form-control-sm" data-column="4" placeholder="$tlang.getString('search.deployment')" aria-label="$tlang.getString('search.deployment')" /></td>#end
+				#if ($isAdmin) <td></td> #end
+				#if ($isAdmin || $allowMaintainerAddSystemTool) <td></td>#end
+			</tr>
+	        </thead>
+	        <tbody>
+            #foreach($toolBean in $ltiTools)
+            	
+				<tr>
+	                <td headers="title"><a href="$sakai_ActionURL.setPanel("ToolView")&id=$toolBean.id">$formattedText.escapeHtml($toolBean.title)</a></td>
+	                <td headers="launch">
+						$formattedText.escapeHtml($!toolBean.launch)
+	                </td>
+	                <td headers="site_id">
+	                	#set($siteId="<span style='display:none;'>zzzz</span>")
+	                	#set($siteId=$toolBean.siteId)
+	                	$!siteId
+	                </td>
+	                #if ($isAdmin) <td headers="use"><a href="$sakai_ActionURL.setPanel("ToolSite").setParameter("sakai_action","doFilter").setQueryString("id=$toolBean.id")">$toolBean.ltiContentCount</a></td> #end
+					#if ($isAdmin)
+						<td headers="tool_deployment">
+							#set($toolProps = $toolPropsMap.get($toolBean.id))
+							#if ($toolProps && $toolProps.get("lti_count_deployment"))
+								<a href="$sakai_ActionURL.setPanel("ToolSiteDeploy")&tool_id=$toolBean.id">$!toolProps.get("lti_count_deployment")</a>
+							#end
+						</td>
+					#end
+	                #if ($isAdmin) <td headers="toolorder">$!toolBean.toolorder</a></td> #end
+	                #if ( $isAdmin || $allowMaintainerAddSystemTool) 
+		                <td headers="action">
+		                	#if ( $isAdmin || ($allowMaintainerAddSystemTool && $getContext == $toolBean.siteId))
+                                <ul style="list-style: none;">
+									<li style="display:inline"><a href="$sakai_ActionURL.setPanel("ToolEdit")&id=$toolBean.id">$tlang.getString("gen.edit")</a></li>
+	                        		<li style="display:inline"><span aria-hidden="true"> / </span> <a href="$sakai_ActionURL.setPanel("ToolDelete")&id=$toolBean.id">$tlang.getString("gen.delete")</a> </li>
+									#if ( $isAdmin && $isApiEnabled)
+										<li style="display:inline"><span aria-hidden="true"> / </span> <a href="$sakai_ActionURL.setPanel("ToolApiConfig")&id=$toolBean.id">$tlang.getString("tool.api.access")</a></li>
+									#end
+									#if ( $toolBean.ltiContentCount > 0 )
+                                		<li style="display:inline"><span aria-hidden="true"> / </span> <a href="$sakai_ActionURL.setPanel("ToolTransfer")&id=$toolBean.id">$tlang.getString("gen.transfer")</a></li>
+                                	#end
+
+									#set($privacy=0)
+									#set($privacy=$toolBean.plPrivacy)
+									#set($lti13=0)
+									#set($lti13=$toolBean.lti13)
+
+									#if ( $lti13 == 1 && $privacy == 1 )
+										#set($toolProps = $toolPropsMap.get($toolBean.id))
+										#if ($toolProps && $toolProps.get("privacy_url"))
+											<li style="display:inline"><span aria-hidden="true"> / </span> <a href="$formattedText.escapeUrl($toolProps.get("privacy_url"))" target="_blank">$tlang.getString("gen.privacy")</a></li>
+										#end
+									#end
+                                </ul>
+	                        #end
+		                </td>
+	                 #end
+                </tr>
+			#end
+			</tbody>
+		</table>
+	#else
+		<p>$tlang.getString("tool.none")</p>
+	#end
+	$tlang.getString("tool.note")
+        </div>
+#if ( ! $isAdmin )
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+        ## Does nothing if we are not in a frame of the right name
+        setMainFrameHeight('sakai-lti-admin-iframe');
+        window.addEventListener("resize", function() {
+                setMainFrameHeight('sakai-lti-admin-iframe');
+        });
+});
+</script>
+#end
+</div>

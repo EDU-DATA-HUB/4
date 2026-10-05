@@ -1,0 +1,44 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.sakaiproject</groupId>
+        <artifactId>master</artifactId>
+        <version>27-SNAPSHOT</version>
+        <relativePath>../master/pom.xml</relativePath>
+    </parent>
+
+    <name>Sakai Hierarchy</name>
+    <groupId>org.sakaiproject</groupId>
+    <artifactId>hierarchy</artifactId>
+
+    <packaging>pom</packaging>
+
+    <description>
+        Hierarchy is meant to provide a high performance basic hierarchy to associate data
+        with, no data is stored in the hierarchy itself, it is simply there to allow you
+        to maintain the hierarchical structure and to provide methods to manipulate it and
+        query it
+    </description>
+
+    <modules>
+        <module>api</module>
+        <module>impl</module>
+    </modules>
+
+    <build>
+        <sourceDirectory>src/main/java</sourceDirectory>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+        </resources>
+        <testSourceDirectory>src/test/java</testSourceDirectory>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+            </testResource>
+        </testResources>
+    </build>
+
+</project>

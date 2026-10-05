@@ -1,0 +1,110 @@
+/**
+ * Copyright (c) 2007 The Apereo Foundation
+ *
+ * Licensed under the Educational Community License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *             http://opensource.org/licenses/ecl2
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.sakaiproject.scorm.model.api.comparator;
+
+import java.io.Serializable;
+import java.util.Comparator;
+import java.util.Locale;
+import java.util.Objects;
+
+import org.apache.commons.lang3.ObjectUtils;
+
+import org.sakaiproject.scorm.model.api.LearnerExperience;
+import org.sakaiproject.util.comparator.UserSortNameComparator;
+
+/**
+ * Custom comparator for LearnerExperience objects; used for sorting data tables.
+ * @author bjones86
+ */
+public class LearnerExperienceComparator implements Comparator<LearnerExperience>, Serializable
+{
+    /**
+     * The available comparison types for LearnerExperience objects
+     */
+    public static enum CompType
+    {
+        Learner, AttemptDate, Status, NumberOfAttempts
+    }
+
+    public static final CompType DEFAULT_COMP = CompType.Learner;
+    private static final long serialVersionUID = 1L;
+
+    private CompType compType = DEFAULT_COMP;
+    private final Locale locale;
+
+    /*
+     * UserSortNameComparator is not serializable (it holds a java.text.Collator), so it must be kept
+     * out of the byte stream and rebuilt from the locale on demand. This comparator is reachable from
+     * the Wicket page tree in the results UI, which Wicket serializes into the session (SAK-52780).
+     */
+    private transient UserSortNameComparator userSortNameComparator;
+
+    public LearnerExperienceComparator(Locale locale)
+    {
+        this.locale = Objects.requireNonNull(locale);
+    }
+
+    private UserSortNameComparator getUserSortNameComparator()
+    {
+        if (userSortNameComparator == null)
+        {
+            userSortNameComparator = new UserSortNameComparator(locale);
+        }
+
+        return userSortNameComparator;
+    }
+
+    /**
+     * Sets the comparison type the comparator will use. This determines which field of LearnerExperience is used for comparisons.
+     * @param value the comparison type
+     */
+    public void setCompType( CompType value )
+    {
+        if( value != null )
+        {
+            compType = value;
+        }
+    }
+
+    @Override
+    public int compare( LearnerExperience le1, LearnerExperience le2 )
+    {
+        // Perform different comparison depending on which comparison type has been selected
+        switch( compType )
+        {
+            case Learner:
+            {
+                String sortName1 = le1.getSortName() != null ? le1.getSortName() : le1.getLearnerName();
+                String sortName2 = le2.getSortName() != null ? le2.getSortName() : le2.getLearnerName();
+                return getUserSortNameComparator().compareSortNames(sortName1, le1.getDisplayId(), sortName2, le2.getDisplayId());
+            }
+            case AttemptDate:
+            {
+                return ObjectUtils.compare( le1.getLastAttemptDate(), le2.getLastAttemptDate() );
+            }
+            case Status:
+            {
+                return Integer.compare( le1.getStatus(), le2.getStatus() );
+            }
+            case NumberOfAttempts:
+            {
+                return Integer.compare( le1.getNumberOfAttempts(), le2.getNumberOfAttempts() );
+            }
+        }
+
+        return 0;
+    }
+}

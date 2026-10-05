@@ -1,0 +1,403 @@
+/**********************************************************************************
+ * Copyright (c) 2025 The Apereo Foundation
+ *
+ * Licensed under the Educational Community License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://opensource.org/licenses/ECL-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ **********************************************************************************/
+
+package org.sakaiproject.poll.tool.mvc;
+
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+
+import java.util.Set;
+
+import org.apache.commons.lang3.StringUtils;
+import org.sakaiproject.component.api.ServerConfigurationService;
+import org.sakaiproject.poll.api.model.Option;
+import org.sakaiproject.poll.api.model.Poll;
+import org.sakaiproject.poll.api.util.PollUtils;
+import org.sakaiproject.poll.api.service.PollsService;
+import org.sakaiproject.poll.tool.model.PollForm;
+import org.sakaiproject.poll.tool.service.PollPermissionsService;
+import org.sakaiproject.time.api.UserTimeService;
+import org.sakaiproject.tool.api.SessionManager;
+import org.sakaiproject.tool.api.ToolManager;
+import org.sakaiproject.util.api.FormattedText;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.MessageSource;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+import lombok.Value;
+import lombok.extern.slf4j.Slf4j;
+
+@Controller
+@RequestMapping
+@Slf4j
+public class PollEditorController {
+    private final PollsService pollsService;
+    private final SessionManager sessionManager;
+    private final ToolManager toolManager;
+    private final ServerConfigurationService serverConfigurationService;
+    private final FormattedText formattedText;
+    private final UserTimeService userTimeService;
+    private final MessageSource messageSource;
+    private final PollPermissionsService pollPermissionsService;
+
+    public PollEditorController(PollsService pollsService,
+                                SessionManager sessionManager,
+                                ToolManager toolManager,
+                                ServerConfigurationService serverConfigurationService,
+                                @Qualifier("org.sakaiproject.time.api.UserTimeService") UserTimeService userTimeService,
+                                MessageSource messageSource,
+                                FormattedText formattedText,
+                                PollPermissionsService pollPermissionsService) {
+        this.pollsService = pollsService;
+        this.sessionManager = sessionManager;
+        this.toolManager = toolManager;
+        this.serverConfigurationService = serverConfigurationService;
+        this.userTimeService = userTimeService;
+        this.messageSource = messageSource;
+        this.formattedText = formattedText;
+        this.pollPermissionsService = pollPermissionsService;
+    }
+
+    @GetMapping("/voteAdd")
+    public String editPoll(@RequestParam(value = "pollId", required = false) String pollId,
+                           Model model,
+                           Locale locale) {
+        boolean isNew = StringUtils.isEmpty(pollId);
+        PollForm form;
+        List options = List.of();
+        boolean hasVotes = false;
+
+        if (isNew) {
+            if (!pollPermissionsService.canAddPoll()) {
+                model.addAttribute("alert", messageSource.getMessage("new_poll_noperms", null, locale));
+                return "redirect:/votePolls";
+            }
+            form = newPollForm();
+        } else {
+            Optional<Poll> poll = pollsService.getPollById(pollId);
+            if (poll.isEmpty()) {
+                model.addAttribute("alert", messageSource.getMessage("poll_missing", null, locale));
+                return "redirect:/votePolls";
+            }
+
+            if (!pollPermissionsService.canEditPoll(poll.get())) {
+                model.addAttribute("alert", messageSource.getMessage("new_poll_noperms", null, locale));
+                return "redirect:/votePolls";
+            }
+
+            ZoneId zoneId = getUserZoneId();
+            form = editPollForm(poll.get(), zoneId);
+            options = pollsService.getVisibleOptionsForPoll(poll.get().getId());
+            hasVotes = !pollsService.getAllVotesForPoll(poll.get().getId()).isEmpty();
+        }
+
+        model.addAttribute("pollForm", form);
+        model.addAttribute("isNew", isNew);
+        model.addAttribute("options", options);
+        model.addAttribute("hasVotes", hasVotes);
+        model.addAttribute("displayResultChoices", List.of(
+                new DisplayOption("open", "new_poll_open"),
+                new DisplayOption("afterVoting", "new_poll_aftervoting"),
+                new DisplayOption("afterClosing", "new_poll_afterClosing"),
+                new DisplayOption("never", "new_poll_never")
+        ));
+        model.addAttribute("accessChoices", List.of(
+            new DisplayOption(Poll.Access.SITE.name(), "new_poll_access_site"),
+            new DisplayOption(Poll.Access.GROUP.name(), "new_poll_access_groups")
+        ));
+
+        model.addAttribute("canAdd", pollPermissionsService.canAddPoll());
+        model.addAttribute("isSiteOwner", pollPermissionsService.isSiteOwner());
+        model.addAttribute("showPublicAccess", serverConfigurationService.getBoolean("poll.allow.public.access", false));
+        model.addAttribute("timezone", getUserZoneId());
+
+        String siteId = toolManager.getCurrentPlacement().getContext();
+        model.addAttribute("groups", pollsService.getSiteGroups(siteId));
+        return "polls/edit";
+    }
+
+    @PostMapping("/voteAdd")
+    public String savePoll(@ModelAttribute("pollForm") PollForm pollForm,
+                           BindingResult bindingResult,
+                           RedirectAttributes redirectAttributes,
+                           Locale locale,
+                           Model model,
+                           @RequestParam(value = "redirect", required = false) String redirectTarget) {
+        boolean isNewPoll = StringUtils.isBlank(pollForm.getPollId());
+        String currentSiteId = toolManager.getCurrentPlacement().getContext();
+        if (isNewPoll) {
+            if (!pollPermissionsService.canAddPoll()) {
+                bindingResult.addError(new FieldError("pollForm", "text", messageSource.getMessage("new_poll_noperms", null, locale)));
+                populateModelForEdit(model, pollForm, List.of(), false);
+                return "polls/edit";
+            }
+        } else {
+            Optional<Poll> poll = pollsService.getPollById(pollForm.getPollId());
+            if (poll.isEmpty() || !StringUtils.equals(poll.get().getSiteId(), currentSiteId)) {
+                bindingResult.addError(new FieldError("pollForm", "text", messageSource.getMessage("new_poll_noperms", null, locale)));
+                populateModelForEdit(model, pollForm, List.of(), false);
+                return "polls/edit";
+            }
+            if (!pollPermissionsService.canEditPoll(poll.get())) {
+                bindingResult.addError(new FieldError("pollForm", "text", messageSource.getMessage("new_poll_noperms", null, locale)));
+                populateModelForEdit(model, pollForm, List.of(), false);
+                return "polls/edit";
+            }
+        }
+
+        PollEditContext pollEditContext = resolvePollEditContext(pollForm.getPollId());
+
+        // Validate form inputs
+        if (StringUtils.isBlank(pollForm.getText())) {
+            bindingResult.addError(new FieldError("pollForm", "text", messageSource.getMessage("error_no_text", null, locale)));
+            populateModelForEdit(model, pollForm, pollEditContext.options(), pollEditContext.hasVotes());
+            return "polls/edit";
+        }
+
+        if (pollForm.getOpenDate() == null || pollForm.getCloseDate() == null) {
+            bindingResult.addError(new FieldError("pollForm", "closeDate", messageSource.getMessage("poll_dates_required", null, locale)));
+            populateModelForEdit(model, pollForm, pollEditContext.options(), pollEditContext.hasVotes());
+            return "polls/edit";
+        }
+
+        if (pollForm.getOpenDate() != null && pollForm.getCloseDate() != null
+                && pollForm.getOpenDate().isAfter(pollForm.getCloseDate())) {
+            bindingResult.addError(new FieldError("pollForm", "closeDate", messageSource.getMessage("close_before_open", null, locale)));
+            populateModelForEdit(model, pollForm, pollEditContext.options(), pollEditContext.hasVotes());
+            return "polls/edit";
+        }
+
+        if (pollForm.getMinOptions() == null || pollForm.getMaxOptions() == null) {
+            if (pollForm.getMinOptions() == null) bindingResult.addError(new FieldError("pollForm", "minOptions", messageSource.getMessage("minimum_options_required", null, locale)));
+            if (pollForm.getMaxOptions() == null) bindingResult.addError(new FieldError("pollForm", "maxOptions", messageSource.getMessage("maximum_options_required", null, locale)));
+            populateModelForEdit(model, pollForm, pollEditContext.options(), pollEditContext.hasVotes());
+            return "polls/edit";
+        }
+
+        if (pollForm.getMinOptions() > pollForm.getMaxOptions()) {
+            bindingResult.addError(new FieldError("pollForm", "minOptions", messageSource.getMessage("min_greater_than_max", null, locale)));
+            populateModelForEdit(model, pollForm, pollEditContext.options(), pollEditContext.hasVotes());
+            return "polls/edit";
+        }
+
+        if (pollForm.getTypeOfAccess() == Poll.Access.GROUP
+                && (pollForm.getSelectedGroupIds() == null || pollForm.getSelectedGroupIds().isEmpty())) {
+            bindingResult.addError(new FieldError("pollForm", "selectedGroupIds", messageSource.getMessage("new_poll_groups_required", null, locale)));
+            populateModelForEdit(model, pollForm, pollEditContext.options(), pollEditContext.hasVotes());
+            return "polls/edit";
+        }
+
+        if (pollForm.getTypeOfAccess() == Poll.Access.GROUP) {
+            Set<String> validGroupIds = pollsService.filterValidGroupIds(currentSiteId, pollForm.getSelectedGroupIds());
+            boolean hasInvalidGroupIds = pollForm.getSelectedGroupIds().stream()
+                    .anyMatch(groupId -> !validGroupIds.contains(groupId));
+            if (hasInvalidGroupIds) {
+                bindingResult.addError(new FieldError("pollForm", "selectedGroupIds", messageSource.getMessage("new_poll_groups_required", null, locale)));
+                populateModelForEdit(model, pollForm, pollEditContext.options(), pollEditContext.hasVotes());
+                return "polls/edit";
+            }
+        }
+
+        int optionCount = pollEditContext.options().size();
+        if (!isNewPoll && (pollForm.getMinOptions() > optionCount || pollForm.getMaxOptions() > optionCount)) {
+            bindingResult.addError(new FieldError("pollForm", "maxOptions", messageSource.getMessage("invalid_poll_limits", null, locale)));
+            populateModelForEdit(model, pollForm, pollEditContext.options(), pollEditContext.hasVotes());
+            return "polls/edit";
+        }
+
+        Poll poll = preparePollEntity(pollForm);
+        if (poll == null) {
+            redirectAttributes.addFlashAttribute("alert", messageSource.getMessage("poll_missing", null, locale));
+            return "redirect:/votePolls";
+        }
+
+        Poll saved = pollsService.savePoll(poll);
+        redirectAttributes.addFlashAttribute("success", messageSource.getMessage("poll_saved_success", null, locale));
+
+        if ("option".equals(redirectTarget)) {
+            return "redirect:/pollOption?pollId=" + saved.getId();
+        }
+        if ("optionBatch".equals(redirectTarget)) {
+            return "redirect:/pollOptionBatch?pollId=" + saved.getId();
+        }
+        if (saved.getOptions().isEmpty()) {
+            return "redirect:/pollOption?pollId=" + saved.getId();
+        }
+        return "redirect:/votePolls";
+    }
+
+    private void populateModelForEdit(Model model, PollForm pollForm, List options, boolean hasVotes) {
+        model.addAttribute("options", options);
+        model.addAttribute("hasVotes", hasVotes);
+        model.addAttribute("displayResultChoices", List.of(
+                new DisplayOption("open", "new_poll_open"),
+                new DisplayOption("afterVoting", "new_poll_aftervoting"),
+                new DisplayOption("afterClosing", "new_poll_afterClosing"),
+                new DisplayOption("never", "new_poll_never")
+        ));
+        model.addAttribute("accessChoices", List.of(
+            new DisplayOption(Poll.Access.SITE.name(), "new_poll_access_site"),
+            new DisplayOption(Poll.Access.GROUP.name(), "new_poll_access_groups")
+        ));
+        model.addAttribute("isNew", StringUtils.isBlank(pollForm.getPollId()));
+        model.addAttribute("canAdd", pollPermissionsService.canAddPoll());
+        model.addAttribute("isSiteOwner", pollPermissionsService.isSiteOwner());
+        model.addAttribute("showPublicAccess", serverConfigurationService.getBoolean("poll.allow.public.access", false));
+        model.addAttribute("timezone", getUserZoneId());
+
+        String siteId = toolManager.getCurrentPlacement().getContext();
+        model.addAttribute("groups", pollsService.getSiteGroups(siteId));
+    }
+
+    private PollEditContext resolvePollEditContext(String pollId) {
+        if (StringUtils.isBlank(pollId)) {
+            return new PollEditContext(List.of(), false);
+        }
+
+        Optional<Poll> poll = pollsService.getPollById(pollId);
+        if (poll.isEmpty()) {
+            return new PollEditContext(List.of(), false);
+        }
+
+        List<Option> options = pollsService.getVisibleOptionsForPoll(poll.get().getId());
+        boolean hasVotes = !pollsService.getAllVotesForPoll(poll.get().getId()).isEmpty();
+        return new PollEditContext(options, hasVotes);
+    }
+
+    private Poll preparePollEntity(PollForm form) {
+        Poll poll;
+        if (StringUtils.isNotBlank(form.getPollId())) {
+            Optional<Poll> p = pollsService.getPollById(form.getPollId());
+            if (p.isEmpty()) {
+                return null;
+            } else {
+                poll = p.get();
+            }
+        } else {
+            poll = new Poll();
+        }
+
+        // Process and sanitize HTML in title
+        String sanitizedTitle = formattedText.processFormattedText(
+            form.getText() != null ? form.getText() : "",
+            null,
+            null
+        );
+        poll.setText(PollUtils.cleanupHtmlPtags(StringUtils.trimToEmpty(sanitizedTitle)));
+
+        // Process and sanitize HTML in description
+        String sanitizedDescription = formattedText.processFormattedText(
+            form.getDetails() != null ? form.getDetails() : "",
+            null,
+            null
+        );
+        poll.setDescription(PollUtils.cleanupHtmlPtags(StringUtils.trimToEmpty(sanitizedDescription)));
+
+        poll.setPublic(form.isPublic());
+        poll.setTypeOfAccess(form.getTypeOfAccess() != null ? form.getTypeOfAccess() : Poll.Access.SITE);
+        poll.setMinOptions(form.getMinOptions());
+        poll.setMaxOptions(form.getMaxOptions());
+        poll.setDisplayResult(form.getDisplayResult());
+        poll.setSiteId(toolManager.getCurrentPlacement().getContext());
+        poll.setOwner(sessionManager.getCurrentSessionUserId());
+        poll.setLimitVoting(true);
+
+        // Convert LocalDateTime to Instant for persistence
+        ZoneId zoneId = getUserZoneId();
+        if (form.getOpenDate() != null) {
+            poll.setVoteOpen(form.getOpenDate().atZone(zoneId).toInstant());
+        }
+        if (form.getCloseDate() != null) {
+            poll.setVoteClose(form.getCloseDate().atZone(zoneId).toInstant());
+        }
+        if (form.getTypeOfAccess() == Poll.Access.GROUP) {
+            poll.setGroupIds(pollsService.filterValidGroupIds(toolManager.getCurrentPlacement().getContext(), form.getSelectedGroupIds()));
+        } else {
+            poll.setGroupIds(new HashSet<>());
+        }
+
+        return poll;
+    }
+
+    private PollForm newPollForm() {
+        PollForm form = new PollForm();
+        LocalDateTime defaultOpen = truncateToMinutes(LocalDateTime.now(getUserZoneId()));
+        form.setPollId(null);
+        form.setText("");
+        form.setDetails("");
+        form.setPublic(false);
+        form.setMinOptions(1);
+        form.setMaxOptions(1);
+        form.setDisplayResult("open");
+        form.setOpenDate(defaultOpen);
+        form.setCloseDate(defaultOpen.plusYears(1));
+        form.setTypeOfAccess(Poll.Access.SITE);
+        return form;
+    }
+
+    private PollForm editPollForm(Poll poll, ZoneId zoneId) {
+        PollForm form = new PollForm();
+        form.setPollId(poll.getId());
+        form.setText(poll.getText());
+        form.setDetails(poll.getDescription());
+        form.setPublic(poll.isPublic());
+        form.setMinOptions(poll.getMinOptions());
+        form.setMaxOptions(poll.getMaxOptions());
+        form.setDisplayResult(poll.getDisplayResult());
+        form.setOpenDate(truncateToMinutes(toLocalDateTime(poll.getVoteOpen(), zoneId)));
+        form.setCloseDate(truncateToMinutes(toLocalDateTime(poll.getVoteClose(), zoneId)));
+        form.setTypeOfAccess(poll.getTypeOfAccess() != null ? poll.getTypeOfAccess() : Poll.Access.SITE);
+        form.setSelectedGroupIds(poll.getGroupIds() != null ? new HashSet<>(poll.getGroupIds()) : new HashSet<>());
+        return form;
+    }
+
+    private LocalDateTime toLocalDateTime(java.time.Instant instant, ZoneId zoneId) {
+        if (instant == null) {
+            return null;
+        }
+        return LocalDateTime.ofInstant(instant, zoneId);
+    }
+
+    private ZoneId getUserZoneId() {
+        return userTimeService.getLocalTimeZone().toZoneId();
+    }
+
+    private LocalDateTime truncateToMinutes(LocalDateTime value) {
+        return value != null ? value.truncatedTo(ChronoUnit.MINUTES) : null;
+    }
+
+    @Value
+    public static class DisplayOption {
+        String value;
+        String labelKey;
+    }
+
+    private record PollEditContext(List<Option> options, boolean hasVotes) { }
+}

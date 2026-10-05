@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	   xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+	<bean id="org.sakaiproject.scorm.dao.api.ActivityTreeHolderDao"
+		  class="org.sakaiproject.scorm.dao.hibernate.ActivityTreeHolderDaoImpl">
+		<property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+	</bean>
+
+	<bean id="org.sakaiproject.scorm.dao.api.AttemptDao"
+		  class="org.sakaiproject.scorm.dao.hibernate.AttemptDaoImpl">
+		<property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+	</bean>
+
+	<bean id="org.sakaiproject.scorm.dao.api.ContentPackageDao"
+		  class="org.sakaiproject.scorm.dao.hibernate.ContentPackageDaoImpl">
+		<property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+	</bean>
+
+	<bean id="org.sakaiproject.scorm.dao.api.ContentPackageManifestDao"
+		  class="org.sakaiproject.scorm.dao.hibernate.ContentPackageManifestDaoImpl">
+		<property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+	</bean>
+
+	<bean id="org.sakaiproject.scorm.dao.api.DataManagerDao"
+		  class="org.sakaiproject.scorm.dao.hibernate.DataManagerDaoImpl">
+		<property name="sessionFactory" ref="org.sakaiproject.springframework.orm.hibernate.GlobalSessionFactory"/>
+	</bean>
+</beans>

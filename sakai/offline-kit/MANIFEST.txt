@@ -1,0 +1,42 @@
+offline-kit manifest
+created=Sun 10/04/2026 17:01:35.76
+repo=C:\Users\Aesop\Documents\Aesop\offline\2\1\sakai
+volume_size=90m
+
+01-tools.zip.001  size=94371840  sha256=
+01-tools.zip.002  size=94371840  sha256=
+01-tools.zip.003  size=22655042  sha256=
+02-docker-images.zip.001  size=94371840  sha256=
+02-docker-images.zip.002  size=94371840  sha256=
+02-docker-images.zip.003  size=94371840  sha256=
+02-docker-images.zip.004  size=94371840  sha256=
+02-docker-images.zip.005  size=94371840  sha256=
+02-docker-images.zip.006  size=94371840  sha256=
+02-docker-images.zip.007  size=94371840  sha256=
+02-docker-images.zip.008  size=75216712  sha256=
+03-m2-repo.7z.001  size=94371840  sha256=
+03-m2-repo.7z.002  size=94371840  sha256=
+03-m2-repo.7z.003  size=94371840  sha256=
+03-m2-repo.7z.004  size=94371840  sha256=
+03-m2-repo.7z.005  size=94371840  sha256=
+03-m2-repo.7z.006  size=94371840  sha256=
+03-m2-repo.7z.007  size=94371840  sha256=
+03-m2-repo.7z.008  size=94371840  sha256=
+03-m2-repo.7z.009  size=94371840  sha256=
+03-m2-repo.7z.010  size=94371840  sha256=
+03-m2-repo.7z.011  size=94371840  sha256=
+03-m2-repo.7z.012  size=94371840  sha256=
+03-m2-repo.7z.013  size=47622386  sha256=
+04-tomcat-sakai.7z.001  size=94371840  sha256=
+04-tomcat-sakai.7z.002  size=94371840  sha256=
+04-tomcat-sakai.7z.003  size=94371840  sha256=
+04-tomcat-sakai.7z.004  size=94371840  sha256=
+04-tomcat-sakai.7z.005  size=94371840  sha256=
+04-tomcat-sakai.7z.006  size=94371840  sha256=
+04-tomcat-sakai.7z.007  size=94371840  sha256=
+04-tomcat-sakai.7z.008  size=94371840  sha256=
+04-tomcat-sakai.7z.009  size=94371840  sha256=
+04-tomcat-sakai.7z.010  size=94371840  sha256=
+04-tomcat-sakai.7z.011  size=94371840  sha256=
+04-tomcat-sakai.7z.012  size=94371840  sha256=
+04-tomcat-sakai.7z.013  size=51141908  sha256=

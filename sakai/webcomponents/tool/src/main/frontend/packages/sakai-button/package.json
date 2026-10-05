@@ -1,0 +1,33 @@
+{
+  "name": "@sakai-ui/sakai-button",
+  "version": "3.0.6",
+  "description": "A Sakai button component",
+  "main": "index.js",
+  "scripts": {
+    "lint:fix": "eslint src --fix",
+    "test": "wtr"
+  },
+  "files": [
+    "*.js",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sakaiproject/sakai",
+    "directory": "webcomponents/tool/src/main/frontend/packages/sakai-button"
+  },
+  "keywords": [
+    "sakai",
+    "button"
+  ],
+  "author": "The Sakai Project <sakai.user.interface@gmail.com>",
+  "license": "ECL-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./sakai-button.js": "./sakai-button.js"
+  },
+  "homepage": "https://github.com/sakaiproject/sakai/tree/master/webcomponents/tool/src/main/frontend/packages/sakai-button#readme"
+}

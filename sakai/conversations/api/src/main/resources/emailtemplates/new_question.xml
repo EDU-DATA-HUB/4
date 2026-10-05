@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<emailTemplates>
+<emailTemplate>
+  <subject>[${localSakaiName}] ${bundle["noti.newquestion.subject"]?replace("{0}", siteTitle)}</subject>
+  <message>
+${bundle["noti.newquestion.message"]?replace("{0}", topicTitle)} at:
+${topicUrl}
+  </message>
+  <messagehtml>
+&lt;#ftl output_format="HTML" auto_esc=true&gt;
+&lt;br /&gt;
+&lt;br /&gt;
+${bundle["noti.newquestion.message"]?replace("{0}", topicTitle)} &lt;a href="${topicUrl}"&gt;${bundle["noti.here"]}&lt;/a&gt;
+  </messagehtml>
+  <version>2</version>
+  <owner>admin</owner>
+  <key>sakai.conversations.newquestion</key>
+  <locale></locale>
+  <localeLangTag></localeLangTag>
+</emailTemplate>
+</emailTemplates>
